@@ -1,0 +1,33 @@
+name:           mainland-pretty
+version:        0.1.0.2
+cabal-version:  >= 1.6
+license:        BSD3
+license-file:   LICENSE
+copyright:      (c) 2006-2010 Harvard University
+author:         Geoffrey Mainland <mainland@eecs.harvard.edu>
+maintainer:     mainland@eecs.harvard.edu
+stability:      alpha
+homepage:       http://www.eecs.harvard.edu/~mainland/
+category:       Text
+synopsis:       Pretty printing designed for printing source code.
+description:    Pretty printing designed for printing source code based on
+		Wadler's paper /A Prettier Printer/. The main advantage of this
+		library is its ability to automatically track the source
+		locations associated with pretty printed values and output
+		appropriate #line pragmas.
+
+build-type:     Simple
+
+library
+  exposed-modules:
+    Text.PrettyPrint.Mainland
+
+  build-depends:
+    base >= 4 && < 5,
+    containers >= 0.2 && < 0.5,
+    srcloc >= 0.1 && < 0.2,
+    symbol >= 0.1 && < 0.4
+
+source-repository head
+  type:     svn
+  location: http://senseless.eecs.harvard.edu/repos/mainland-projects/mainland-pretty/trunk/
