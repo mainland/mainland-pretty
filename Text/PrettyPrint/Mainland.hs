@@ -86,7 +86,7 @@ module Text.PrettyPrint.Mainland (
     RDoc(..),
 
     -- * Document rendering
-    render,
+    render, renderCompact,
     displayS, prettyS, pretty,
     displayPragmaS, prettyPragmaS, prettyPragma,
 
@@ -431,6 +431,26 @@ errordoc = error . show
 -- | Render a document given a maximum width.
 render :: Int -> Doc -> RDoc
 render w x = best w 0 x
+
+-- | Render a document without indentation on infinitely long lines. Since no
+-- \'pretty\' printing is involved, this renderer is fast. The resulting output
+-- contains fewer characters.
+renderCompact :: Doc -> RDoc
+renderCompact doc = scan 0 [doc]
+  where
+    scan _ []     = REmpty
+    scan k (d:ds) = case d of
+                      Empty     -> scan k ds
+                      Char c    -> let k' = k+1 in k' `seq` RChar c (scan k' ds)
+                      Text l s  -> let k' = k+l in k' `seq` RText l s (scan k' ds)
+                      Line      -> RLine 0 (scan 0 ds)
+                      Nest _ x  -> scan k (x:ds)
+                      SrcLoc _  -> scan k ds
+                      Cat x y   -> scan k (x:y:ds)
+                      Alt x _   -> scan k (x:ds)
+                      Column f  -> scan k (f k:ds)
+                      Nesting f -> scan k (f 0:ds)
+
 
 -- | Display a rendered document.
 displayS :: RDoc -> ShowS
