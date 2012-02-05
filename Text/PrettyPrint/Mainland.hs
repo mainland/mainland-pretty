@@ -451,7 +451,6 @@ renderCompact doc = scan 0 [doc]
                       Column f  -> scan k (f k:ds)
                       Nesting f -> scan k (f 0:ds)
 
-
 -- | Display a rendered document.
 displayS :: RDoc -> ShowS
 displayS REmpty        = id
