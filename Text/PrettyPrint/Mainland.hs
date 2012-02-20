@@ -472,11 +472,11 @@ displayPragmaS :: RDoc -> ShowS
 displayPragmaS REmpty        = id
 displayPragmaS (RChar c x)   = showChar c . displayPragmaS x
 displayPragmaS (RText _ s x) = showString s . displayPragmaS x
-displayPragmaS (RPos p x)    = showString "#line " .
+displayPragmaS (RPos p x)    = showChar '\n' .
+                               showString "#line " .
                                shows (posLine p) .
                                showChar ' ' .
                                shows (posFile p) .
-                               showChar '\n' .
                                displayPragmaS x
 displayPragmaS (RLine i x)   = showString ('\n' : replicate i ' ') .
                                displayPragmaS x
@@ -546,7 +546,7 @@ best w k x = be Nothing Nothing k id (Cons 0 x Nil)
                         k' `seq` be p p' k' (f . RChar c) ds
           Text l s   -> let k' = k + l in
                         k' `seq` be p p' k' (f . RText l s) ds
-          Line       -> (pragma . f . RLine i) (be p'' Nothing i id ds)
+          Line       -> (f . pragma . RLine i) (be p'' Nothing i id ds)
           x `Cat` y  -> be p p' k f (Cons i x (Cons i y ds))
           Nest j x   -> let j' = i + j in
                         j' `seq` be p p' k f (Cons j' x ds)
