@@ -1,10 +1,11 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverlappingInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- Copyright (c) 2006-2010
+-- Copyright (c) 2006-2012
 --         The President and Fellows of Harvard College.
 --
 -- Redistribution and use in source and binary forms, with or without
@@ -34,7 +35,7 @@
 --------------------------------------------------------------------------------
 -- |
 -- Module      :  Text.PrettyPrint.Mainland
--- Copyright   :  (c) Harvard University 2006-2010
+-- Copyright   :  (c) Harvard University 2006-2012
 -- License     :  BSD-style
 -- Maintainer  :  mainland@eecs.harvard.edu
 --
@@ -97,20 +98,20 @@ module Text.PrettyPrint.Mainland (
   ) where
 
 import Data.Int
-import qualified Data.Map as Map
-import qualified Data.Set as Set
-import Data.Word
-
 import Data.Loc (L(..),
                  Loc(..),
                  Located(..),
                  Pos(..),
                  posFile,
                  posLine)
+import qualified Data.Map as Map
+import Data.Monoid
+import qualified Data.Set as Set
 import Data.Symbol
+import Data.Word
 
 infixr 5 </>, <+/>, <//>
-infixr 6 <>, <+>
+infixr 6 <+>
 
 data Doc = Empty                -- ^ The empty document
          | Char Char            -- ^ A single character
@@ -188,9 +189,6 @@ flatten (x `Alt` _)  = flatten x
 flatten (SrcLoc loc) = SrcLoc loc
 flatten (Column f)   = Column (flatten . f)
 flatten (Nesting f)  = Nesting (flatten . f)
-
-(<>) :: Doc -> Doc -> Doc
-x <> y = x `Cat` y
 
 (<+>) :: Doc -> Doc -> Doc
 x <+> y = x <> space <> y
@@ -569,6 +567,18 @@ best w k x = be Nothing Nothing k id (Cons 0 x Nil)
     fits  w  (RText l _ x)    = fits (w - l) x
     fits  w  (RPos _ x)       = fits w x
     fits  _  (RLine _ _)      = True
+
+#if MIN_VERSION_base(4,5,0)
+#else
+infixr 6 <>
+
+(<>) :: Doc -> Doc -> Doc
+x <> y = x `Cat` y
+#endif
+
+instance Monoid Doc where
+    mempty  = empty
+    mappend = Cat
 
 class Pretty a where
     ppr     :: a -> Doc
