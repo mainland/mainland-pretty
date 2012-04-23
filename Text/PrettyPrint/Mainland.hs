@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -436,18 +437,20 @@ render w x = best w 0 x
 renderCompact :: Doc -> RDoc
 renderCompact doc = scan 0 [doc]
   where
-    scan _ []     = REmpty
-    scan k (d:ds) = case d of
-                      Empty     -> scan k ds
-                      Char c    -> let k' = k+1 in k' `seq` RChar c (scan k' ds)
-                      Text l s  -> let k' = k+l in k' `seq` RText l s (scan k' ds)
-                      Line      -> RLine 0 (scan 0 ds)
-                      Nest _ x  -> scan k (x:ds)
-                      SrcLoc _  -> scan k ds
-                      Cat x y   -> scan k (x:y:ds)
-                      Alt x _   -> scan k (x:ds)
-                      Column f  -> scan k (f k:ds)
-                      Nesting f -> scan k (f 0:ds)
+    scan :: Int -> [Doc] -> RDoc
+    scan !_ []     = REmpty
+    scan !k (d:ds) =
+        case d of
+          Empty     -> scan k ds
+          Char c    -> RChar c (scan (k+1) ds)
+          Text l s  -> RText l s (scan (k+l) ds)
+          Line      -> RLine 0 (scan 0 ds)
+          Nest _ x  -> scan k (x:ds)
+          SrcLoc _  -> scan k ds
+          Cat x y   -> scan k (x:y:ds)
+          Alt x _   -> scan k (x:ds)
+          Column f  -> scan k (f k:ds)
+          Nesting f -> scan k (f 0:ds)
 
 -- | Display a rendered document.
 displayS :: RDoc -> ShowS
@@ -528,7 +531,7 @@ data Docs = Nil                -- ^ No document.
           | Cons !Int Doc Docs -- ^ Indentation, document and tail
 
 best :: Int -> Int -> Doc -> RDoc
-best w k x = be Nothing Nothing k id (Cons 0 x Nil)
+best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
   where
     be :: Maybe Pos -- ^ Previous source position
        -> Maybe Pos -- ^ Current source position
@@ -536,18 +539,15 @@ best w k x = be Nothing Nothing k id (Cons 0 x Nil)
        -> RDocS
        -> Docs
        -> RDoc
-    be  _ _  _  f Nil           = f REmpty
-    be  p p' k  f (Cons i d ds) =
+    be  _ _  !_  f Nil           = f REmpty
+    be  p p' !k  f (Cons i d ds) =
         case d of
           Empty      -> be p p' k f ds
-          Char c     -> let k' = k + 1 in
-                        k' `seq` be p p' k' (f . RChar c) ds
-          Text l s   -> let k' = k + l in
-                        k' `seq` be p p' k' (f . RText l s) ds
+          Char c     -> be p p' (k+1) (f . RChar c) ds
+          Text l s   -> be p p' (k+l) (f . RText l s) ds
           Line       -> (f . pragma . RLine i) (be p'' Nothing i id ds)
           x `Cat` y  -> be p p' k f (Cons i x (Cons i y ds))
-          Nest j x   -> let j' = i + j in
-                        j' `seq` be p p' k f (Cons j' x ds)
+          Nest j x   -> be p p' k f (Cons (i+j) x ds)
           x `Alt` y  -> better k f (be p p' k id (Cons i x ds))
                                    (be p p' k id (Cons i y ds))
           SrcLoc loc -> be p (merge p' loc) k f ds
@@ -557,16 +557,16 @@ best w k x = be Nothing Nothing k id (Cons 0 x Nil)
         (p'', pragma) = lineloc p p'
 
     better :: Int -> RDocS -> RDoc -> RDoc -> RDoc
-    better k f x y | fits (w - k) x = f x
-                   | otherwise      = f y
+    better !k f x y | fits (w - k) x = f x
+                    | otherwise      = f y
 
     fits :: Int -> RDoc -> Bool
-    fits  w  _        | w < 0 = False
-    fits  _  REmpty           = True
-    fits  w  (RChar _ x)      = fits (w - 1) x
-    fits  w  (RText l _ x)    = fits (w - l) x
-    fits  w  (RPos _ x)       = fits w x
-    fits  _  (RLine _ _)      = True
+    fits  !w  _        | w < 0 = False
+    fits  !_  REmpty           = True
+    fits  !w  (RChar _ x)      = fits (w - 1) x
+    fits  !w  (RText l _ x)    = fits (w - l) x
+    fits  !w  (RPos _ x)       = fits w x
+    fits  !_  (RLine _ _)      = True
 
 #if MIN_VERSION_base(4,5,0)
 #else
