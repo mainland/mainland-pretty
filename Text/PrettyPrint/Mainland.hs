@@ -568,13 +568,12 @@ best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
     fits  !w  (RPos _ x)       = fits w x
     fits  !_  (RLine _ _)      = True
 
-#if MIN_VERSION_base(4,5,0)
-#else
+#if !MIN_VERSION_base(4,5,0)
 infixr 6 <>
 
 (<>) :: Doc -> Doc -> Doc
 x <> y = x `Cat` y
-#endif
+#endif /* !MIN_VERSION_base(4,5,0) */
 
 instance Monoid Doc where
     mempty  = empty
