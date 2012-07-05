@@ -1,11 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverlappingInstances #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
-
 -- Copyright (c) 2006-2012
 --         The President and Fellows of Harvard College.
 --
@@ -55,6 +47,10 @@
 -- locations associated with pretty printed values and output appropriate
 -- #line pragmas.
 --------------------------------------------------------------------------------
+
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP #-}
+{-# LANGUAGE OverlappingInstances #-}
 
 module Text.PrettyPrint.Mainland (
     -- * The document type
@@ -580,6 +576,9 @@ instance Monoid Doc where
     mempty  = empty
     mappend = Cat
 
+instance Show Doc where
+    showsPrec _ = prettyS 80
+
 class Pretty a where
     ppr     :: a -> Doc
     pprPrec :: Int -> a -> Doc
@@ -636,12 +635,6 @@ instance (Pretty a, Pretty b, Pretty c, Pretty d)
 instance Pretty a => Pretty (Maybe a) where
     pprPrec _ Nothing  = empty
     pprPrec p (Just a) = pprPrec p a
-
-instance Show Doc where
-    showsPrec _ = prettyS 80
-
-instance Pretty a => Show a where
-    showsPrec p = showsPrec p . ppr
 
 instance Pretty Symbol where
     ppr = text . unintern
