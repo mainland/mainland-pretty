@@ -110,6 +110,7 @@ import Data.Monoid
 import qualified Data.Set as Set
 import Data.Symbol
 import Data.Word
+import GHC.Real (Ratio(..))
 
 infixr 5 </>, <+/>, <//>
 infixr 6 <+>
@@ -600,8 +601,15 @@ instance Pretty Float where
 instance Pretty Double where
     ppr = text . show
 
-instance Pretty Rational where
-    ppr = text . show
+ratioPrec, ratioPrec1 :: Int
+ratioPrec  = 7  -- Precedence of ':%' constructor
+ratioPrec1 = ratioPrec + 1
+
+instance (Integral a, Pretty a) => Pretty (Ratio a)  where
+    {-# SPECIALIZE instance Pretty Rational #-}
+    pprPrec p (x:%y) =
+        parensIf (p > ratioPrec) $
+        pprPrec ratioPrec1 x <+> char '%' <+> pprPrec ratioPrec1 y
 
 instance Pretty Bool where
     ppr = text . show
