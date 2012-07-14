@@ -57,7 +57,7 @@ module Text.PrettyPrint.Mainland (
     Doc,
 
     -- * Basic combinators
-    empty, text, char, string, line, nest, srcloc, column, nesting,
+    empty, text, char, string, fromText, line, nest, srcloc, column, nesting,
     softline, softbreak, group,
 
     -- * Operators
@@ -87,6 +87,8 @@ module Text.PrettyPrint.Mainland (
     render, renderCompact,
     displayS, prettyS, pretty,
     displayPragmaS, prettyPragmaS, prettyPragma,
+    displayLazyText, prettyLazyText,
+    displayPragmaLazyText, prettyPragmaLazyText,
 
     -- * The 'Pretty' type class for pretty printing
     Pretty(..),
@@ -104,7 +106,9 @@ import Data.Loc (L(..),
 import qualified Data.Map as Map
 import Data.Monoid
 import qualified Data.Set as Set
-import Data.Symbol
+import qualified Data.Text as T
+import qualified Data.Text.Lazy as L
+import qualified Data.Text.Lazy.Builder as B
 import Data.Word
 import GHC.Real (Ratio(..))
 
@@ -113,8 +117,9 @@ infixr 6 <+>
 
 data Doc = Empty                -- ^ The empty document
          | Char Char            -- ^ A single character
-         | Text !Int String     -- ^ Text with associated length (to avoid
+         | String !Int String   -- ^ 'String' with associated length (to avoid
                                 -- recomputation)
+         | Text T.Text          -- ^ 'T.Text'
          | Line                 -- ^ Newline
          | Nest !Int Doc        -- ^ Indented document
          | SrcLoc Loc           -- ^ Tag output with source location
@@ -132,7 +137,7 @@ empty = Empty
 -- | The document @'text' s@ consists of the string @s@, which should not
 -- contain any newlines. For a string that may include newlines, use 'string'.
 text :: String -> Doc
-text s = Text (length s) s
+text s = String (length s) s
 
 -- | The document @'char' c@ consists the single character @c@.
 char :: Char -> Doc
@@ -147,6 +152,11 @@ string ('\n' : s) = line <> string s
 string s          = case span (/= '\n') s of
                       (xs, ys) -> text xs <> string ys
 
+-- | The document @'fromText' s@ consists of the 'T.Text' @s@, which should not
+-- contain any newlines.
+fromText :: T.Text -> Doc
+fromText = Text
+
 -- | The document @'line'@ advances to the next line and indents to the current
 -- indentation level. When undone by 'group', it behaves like 'space'.
 line :: Doc
@@ -159,7 +169,7 @@ nest i d = Nest i d
 
 -- | The document @'srcloc' x@ adds the.
 srcloc :: Located a => a -> Doc
-srcloc x = SrcLoc (getLoc x)
+srcloc x = SrcLoc (locOf x)
 
 column :: (Int -> Doc) -> Doc
 column = Column
@@ -179,8 +189,9 @@ group d = flatten d `Alt` d
 flatten :: Doc -> Doc
 flatten Empty        = Empty
 flatten (Char c)     = Char c
-flatten (Text l s)   = Text l s
-flatten Line         = Text 1 " "
+flatten (String l s) = String l s
+flatten (Text s)     = Text s
+flatten Line         = Char ' '
 flatten (x `Cat` y)  = flatten x `Cat` flatten y
 flatten (Nest i x)   = Nest i (flatten x)
 flatten (x `Alt` _)  = flatten x
@@ -438,24 +449,29 @@ renderCompact doc = scan 0 [doc]
     scan !_ []     = REmpty
     scan !k (d:ds) =
         case d of
-          Empty     -> scan k ds
-          Char c    -> RChar c (scan (k+1) ds)
-          Text l s  -> RText l s (scan (k+l) ds)
-          Line      -> RLine 0 (scan 0 ds)
-          Nest _ x  -> scan k (x:ds)
-          SrcLoc _  -> scan k ds
-          Cat x y   -> scan k (x:y:ds)
-          Alt x _   -> scan k (x:ds)
-          Column f  -> scan k (f k:ds)
-          Nesting f -> scan k (f 0:ds)
+          Empty       -> scan k ds
+          Char c      -> RChar c (scan (k+1) ds)
+          String l s  -> RString l s (scan (k+l) ds)
+          Text s      -> RText s (scan (k+T.length s) ds)
+          Line        -> RLine 0 (scan 0 ds)
+          Nest _ x    -> scan k (x:ds)
+          SrcLoc _    -> scan k ds
+          Cat x y     -> scan k (x:y:ds)
+          Alt x _     -> scan k (x:ds)
+          Column f    -> scan k (f k:ds)
+          Nesting f   -> scan k (f 0:ds)
 
 -- | Display a rendered document.
 displayS :: RDoc -> ShowS
-displayS REmpty        = id
-displayS (RChar c x)   = showChar c . displayS x
-displayS (RText _ s x) = showString s . displayS x
-displayS (RPos _ x)    = displayS x
-displayS (RLine i x)   = showString ('\n' : replicate i ' ') . displayS x
+displayS = go
+  where
+    go :: RDoc -> ShowS
+    go REmpty          = id
+    go (RChar c x)     = showChar c `mappend` go x
+    go (RString _ s x) = showString s `mappend` go x
+    go (RText s x)     = showString (T.unpack s) `mappend` go x
+    go (RPos _ x)      = go x
+    go (RLine i x)     = showString ('\n' : replicate i ' ') `mappend` go x
 
 -- | Render and display a document.
 prettyS :: Int -> Doc -> ShowS
@@ -467,17 +483,21 @@ pretty w x = prettyS w x ""
 
 -- | Display a rendered document with #line pragmas.
 displayPragmaS :: RDoc -> ShowS
-displayPragmaS REmpty        = id
-displayPragmaS (RChar c x)   = showChar c . displayPragmaS x
-displayPragmaS (RText _ s x) = showString s . displayPragmaS x
-displayPragmaS (RPos p x)    = showChar '\n' .
-                               showString "#line " .
-                               shows (posLine p) .
-                               showChar ' ' .
-                               shows (posFile p) .
-                               displayPragmaS x
-displayPragmaS (RLine i x)   = showString ('\n' : replicate i ' ') .
-                               displayPragmaS x
+displayPragmaS = go
+  where
+    go :: RDoc -> ShowS
+    go REmpty          = id
+    go (RChar c x)     = showChar c `mappend` go x
+    go (RString _ s x) = showString s `mappend` go x
+    go (RText s x)     = showString (T.unpack s) `mappend` go x
+    go (RPos p x)      = showChar '\n' `mappend`
+                         showString "#line " `mappend`
+                         shows (posLine p) `mappend`
+                         showChar ' ' `mappend`
+                         shows (posFile p) `mappend`
+                         go x
+    go (RLine i x)     = showString ('\n' : replicate i ' ') `mappend`
+                         go x
 
 -- | Render and display a document with #line pragmas.
 prettyPragmaS :: Int -> Doc -> ShowS
@@ -486,6 +506,44 @@ prettyPragmaS w x = displayPragmaS (render w x)
 -- | Render and convert a document to a 'String' with #line pragmas.
 prettyPragma :: Int -> Doc -> String
 prettyPragma w x = prettyPragmaS w x ""
+
+-- | Display a rendered document as 'L.Text'. Uses a builder.
+displayLazyText :: RDoc -> L.Text
+displayLazyText = B.toLazyText . go
+  where
+    go :: RDoc -> B.Builder
+    go REmpty          = mempty
+    go (RChar c x)     = B.singleton c `mappend` go x
+    go (RString _ s x) = B.fromString s `mappend` go x
+    go (RText s x)     = B.fromText s `mappend` go x
+    go (RPos _ x)      = go x
+    go (RLine i x)     = B.fromString ('\n':replicate i ' ') `mappend` go x
+
+-- | Render and display a document as 'L.Text'. Uses a builder.
+prettyLazyText :: Int -> Doc -> L.Text
+prettyLazyText w x = displayLazyText (render w x)
+
+-- | Display a rendered document with #line pragmas as 'L.Text'. Uses a builder.
+displayPragmaLazyText :: RDoc -> L.Text
+displayPragmaLazyText = B.toLazyText . go
+  where
+    go :: RDoc -> B.Builder
+    go REmpty          = mempty
+    go (RChar c x)     = B.singleton c `mappend` go x
+    go (RText s x)     = B.fromText s `mappend` go x
+    go (RString _ s x) = B.fromString s `mappend` go x
+    go (RPos p x)      = B.singleton '\n' `mappend`
+                         B.fromString "#line " `mappend`
+                         (go . renderCompact . ppr) (posLine p) `mappend`
+                         B.singleton ' ' `mappend`
+                         (go . renderCompact . ppr) (posFile p) `mappend`
+                         go x
+    go (RLine i x)     = B.fromString ('\n':replicate i ' ') `mappend`
+                         go x
+
+-- | Render and convert a document to 'L.Text' with #line pragmas. Uses a builder.
+prettyPragmaLazyText :: Int -> Doc -> L.Text
+prettyPragmaLazyText w x = displayPragmaLazyText (render w x)
 
 merge :: Maybe Pos -> Loc -> Maybe Pos
 merge  Nothing   NoLoc       = Nothing
@@ -514,13 +572,14 @@ lineloc (Just p1)  Nothing
     advance (Pos f l c coff) = Pos f (l+1) c coff
 
 -- | A rendered document.
-data RDoc = REmpty                 -- ^ The empty document
-          | RChar Char RDoc        -- ^ A single character
-          | RText !Int String RDoc -- ^ Text with associated length (to avoid
-                                   -- recomputation)
-          | RPos Pos RDoc          -- ^ Tag output with source location
-          | RLine !Int RDoc        -- ^ A newline with the indentation of the
-                                   -- subsequent line
+data RDoc = REmpty                   -- ^ The empty document
+          | RChar Char RDoc          -- ^ A single character
+          | RString !Int String RDoc -- ^ 'String' with associated length (to
+                                     -- avoid recomputation)
+          | RText T.Text RDoc        -- ^ 'T.Text'
+          | RPos Pos RDoc            -- ^ Tag output with source location
+          | RLine !Int RDoc          -- ^ A newline with the indentation of the
+                                     -- subsequent line
 
 type RDocS = RDoc -> RDoc
 
@@ -541,7 +600,8 @@ best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
         case d of
           Empty      -> be p p' k f ds
           Char c     -> be p p' (k+1) (f . RChar c) ds
-          Text l s   -> be p p' (k+l) (f . RText l s) ds
+          String l s -> be p p' (k+l) (f . RString l s) ds
+          Text s     -> be p p' (k+T.length s) (f . RText s) ds
           Line       -> (f . pragma . RLine i) (be p'' Nothing i id ds)
           x `Cat` y  -> be p p' k f (Cons i x (Cons i y ds))
           Nest j x   -> be p p' k f (Cons (i+j) x ds)
@@ -561,7 +621,8 @@ best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
     fits  !w  _        | w < 0 = False
     fits  !_  REmpty           = True
     fits  !w  (RChar _ x)      = fits (w - 1) x
-    fits  !w  (RText l _ x)    = fits (w - l) x
+    fits  !w  (RString l _ x)  = fits (w - l) x
+    fits  !w  (RText s x)      = fits (w - T.length s) x
     fits  !w  (RPos _ x)       = fits w x
     fits  !_  (RLine _ _)      = True
 
@@ -617,6 +678,9 @@ instance Pretty Char where
     ppr     = text . show
     pprList = text . show
 
+instance Pretty T.Text where
+    ppr = text . show
+
 instance Pretty a => Pretty [a] where
     ppr = pprList
 
@@ -635,9 +699,6 @@ instance (Pretty a, Pretty b, Pretty c, Pretty d)
 instance Pretty a => Pretty (Maybe a) where
     pprPrec _ Nothing  = empty
     pprPrec p (Just a) = pprPrec p a
-
-instance Pretty Symbol where
-    ppr = text . unintern
 
 instance Pretty Pos where
     ppr p@(Pos _ l c _) =
