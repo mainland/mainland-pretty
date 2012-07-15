@@ -57,7 +57,8 @@ module Text.PrettyPrint.Mainland (
     Doc,
 
     -- * Basic combinators
-    empty, text, char, string, fromText, line, nest, srcloc, column, nesting,
+    empty, text, char, string, fromText, fromLazyText,
+    line, nest, srcloc, column, nesting,
     softline, softbreak, group,
 
     -- * Operators
@@ -120,6 +121,7 @@ data Doc = Empty                -- ^ The empty document
          | String !Int String   -- ^ 'String' with associated length (to avoid
                                 -- recomputation)
          | Text T.Text          -- ^ 'T.Text'
+         | LazyText L.Text      -- ^ 'L.Text'
          | Line                 -- ^ Newline
          | Nest !Int Doc        -- ^ Indented document
          | SrcLoc Loc           -- ^ Tag output with source location
@@ -157,6 +159,11 @@ string s          = case span (/= '\n') s of
 fromText :: T.Text -> Doc
 fromText = Text
 
+-- | The document @'fromLazyText' s@ consists of the 'L.Text' @s@, which should
+-- not contain any newlines.
+fromLazyText :: L.Text -> Doc
+fromLazyText = LazyText
+
 -- | The document @'line'@ advances to the next line and indents to the current
 -- indentation level. When undone by 'group', it behaves like 'space'.
 line :: Doc
@@ -191,6 +198,7 @@ flatten Empty        = Empty
 flatten (Char c)     = Char c
 flatten (String l s) = String l s
 flatten (Text s)     = Text s
+flatten (LazyText s) = LazyText s
 flatten Line         = Char ' '
 flatten (x `Cat` y)  = flatten x `Cat` flatten y
 flatten (Nest i x)   = Nest i (flatten x)
@@ -453,6 +461,7 @@ renderCompact doc = scan 0 [doc]
           Char c      -> RChar c (scan (k+1) ds)
           String l s  -> RString l s (scan (k+l) ds)
           Text s      -> RText s (scan (k+T.length s) ds)
+          LazyText s  -> RLazyText s (scan (k+fromIntegral (L.length s)) ds)
           Line        -> RLine 0 (scan 0 ds)
           Nest _ x    -> scan k (x:ds)
           SrcLoc _    -> scan k ds
@@ -470,6 +479,7 @@ displayS = go
     go (RChar c x)     = showChar c `mappend` go x
     go (RString _ s x) = showString s `mappend` go x
     go (RText s x)     = showString (T.unpack s) `mappend` go x
+    go (RLazyText s x) = showString (L.unpack s) `mappend` go x
     go (RPos _ x)      = go x
     go (RLine i x)     = showString ('\n' : replicate i ' ') `mappend` go x
 
@@ -490,6 +500,7 @@ displayPragmaS = go
     go (RChar c x)     = showChar c `mappend` go x
     go (RString _ s x) = showString s `mappend` go x
     go (RText s x)     = showString (T.unpack s) `mappend` go x
+    go (RLazyText s x) = showString (L.unpack s) `mappend` go x
     go (RPos p x)      = showChar '\n' `mappend`
                          showString "#line " `mappend`
                          shows (posLine p) `mappend`
@@ -516,6 +527,7 @@ displayLazyText = B.toLazyText . go
     go (RChar c x)     = B.singleton c `mappend` go x
     go (RString _ s x) = B.fromString s `mappend` go x
     go (RText s x)     = B.fromText s `mappend` go x
+    go (RLazyText s x) = B.fromLazyText s `mappend` go x
     go (RPos _ x)      = go x
     go (RLine i x)     = B.fromString ('\n':replicate i ' ') `mappend` go x
 
@@ -531,6 +543,7 @@ displayPragmaLazyText = B.toLazyText . go
     go REmpty          = mempty
     go (RChar c x)     = B.singleton c `mappend` go x
     go (RText s x)     = B.fromText s `mappend` go x
+    go (RLazyText s x) = B.fromLazyText s `mappend` go x
     go (RString _ s x) = B.fromString s `mappend` go x
     go (RPos p x)      = B.singleton '\n' `mappend`
                          B.fromString "#line " `mappend`
@@ -577,6 +590,7 @@ data RDoc = REmpty                   -- ^ The empty document
           | RString !Int String RDoc -- ^ 'String' with associated length (to
                                      -- avoid recomputation)
           | RText T.Text RDoc        -- ^ 'T.Text'
+          | RLazyText L.Text RDoc    -- ^ 'L.Text'
           | RPos Pos RDoc            -- ^ Tag output with source location
           | RLine !Int RDoc          -- ^ A newline with the indentation of the
                                      -- subsequent line
@@ -602,6 +616,7 @@ best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
           Char c     -> be p p' (k+1) (f . RChar c) ds
           String l s -> be p p' (k+l) (f . RString l s) ds
           Text s     -> be p p' (k+T.length s) (f . RText s) ds
+          LazyText s -> be p p' (k+fromIntegral (L.length s)) (f . RLazyText s) ds
           Line       -> (f . pragma . RLine i) (be p'' Nothing i id ds)
           x `Cat` y  -> be p p' k f (Cons i x (Cons i y ds))
           Nest j x   -> be p p' k f (Cons (i+j) x ds)
@@ -623,6 +638,7 @@ best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
     fits  !w  (RChar _ x)      = fits (w - 1) x
     fits  !w  (RString l _ x)  = fits (w - l) x
     fits  !w  (RText s x)      = fits (w - T.length s) x
+    fits  !w  (RLazyText s x)  = fits (w - fromIntegral (L.length s)) x
     fits  !w  (RPos _ x)       = fits w x
     fits  !_  (RLine _ _)      = True
 
@@ -679,6 +695,9 @@ instance Pretty Char where
     pprList = text . show
 
 instance Pretty T.Text where
+    ppr = text . show
+
+instance Pretty L.Text where
     ppr = text . show
 
 instance Pretty a => Pretty [a] where
