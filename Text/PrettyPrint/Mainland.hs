@@ -703,17 +703,109 @@ instance Pretty L.Text where
 instance Pretty a => Pretty [a] where
     ppr = pprList
 
+instance Pretty () where
+    ppr () =
+        tuple []
+
 instance (Pretty a, Pretty b)
   => Pretty (a, b) where
-    ppr (a, b) = tuple [ppr a, ppr b]
+    ppr (a, b) =
+        tuple [ppr a, ppr b]
 
 instance (Pretty a, Pretty b, Pretty c)
   => Pretty (a, b, c) where
-    ppr (a, b, c) = tuple [ppr a, ppr b, ppr c]
+    ppr (a, b, c) =
+        tuple [ppr a, ppr b, ppr c]
 
 instance (Pretty a, Pretty b, Pretty c, Pretty d)
   => Pretty (a, b, c, d) where
-    ppr (a, b, c, d) = tuple [ppr a, ppr b, ppr c, ppr d]
+    ppr (a, b, c, d) =
+        tuple [ppr a, ppr b, ppr c, ppr d]
+
+instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e)
+  => Pretty (a, b, c, d, e) where
+    ppr (a, b, c, d, e) =
+        tuple [ppr a, ppr b, ppr c, ppr d, ppr e]
+
+instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e,
+          Pretty f)
+  => Pretty (a, b, c, d, e, f) where
+    ppr (a, b, c, d, e, f) =
+        tuple [ppr a, ppr b, ppr c, ppr d, ppr e,
+               ppr f]
+
+instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e,
+          Pretty f, Pretty g)
+  => Pretty (a, b, c, d, e, f, g) where
+    ppr (a, b, c, d, e, f, g) =
+        tuple [ppr a, ppr b, ppr c, ppr d, ppr e,
+               ppr f, ppr g]
+
+instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e,
+          Pretty f, Pretty g, Pretty h)
+  => Pretty (a, b, c, d, e, f, g, h) where
+    ppr (a, b, c, d, e, f, g, h) =
+        tuple [ppr a, ppr b, ppr c, ppr d, ppr e,
+               ppr f, ppr g, ppr h]
+
+instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e,
+          Pretty f, Pretty g, Pretty h, Pretty i)
+  => Pretty (a, b, c, d, e, f, g, h, i) where
+    ppr (a, b, c, d, e, f, g, h, i) =
+        tuple [ppr a, ppr b, ppr c, ppr d, ppr e,
+               ppr f, ppr g, ppr h, ppr i]
+
+instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e,
+          Pretty f, Pretty g, Pretty h, Pretty i, Pretty j)
+  => Pretty (a, b, c, d, e, f, g, h, i, j) where
+    ppr (a, b, c, d, e, f, g, h, i, j) =
+        tuple [ppr a, ppr b, ppr c, ppr d, ppr e,
+               ppr f, ppr g, ppr h, ppr i, ppr j]
+
+instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e,
+          Pretty f, Pretty g, Pretty h, Pretty i, Pretty j,
+          Pretty k)
+  => Pretty (a, b, c, d, e, f, g, h, i, j, k) where
+    ppr (a, b, c, d, e, f, g, h, i, j, k) =
+        tuple [ppr a, ppr b, ppr c, ppr d, ppr e,
+               ppr f, ppr g, ppr h, ppr i, ppr j,
+               ppr k]
+
+instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e,
+          Pretty f, Pretty g, Pretty h, Pretty i, Pretty j,
+          Pretty k, Pretty l)
+  => Pretty (a, b, c, d, e, f, g, h, i, j, k, l) where
+    ppr (a, b, c, d, e, f, g, h, i, j, k, l) =
+        tuple [ppr a, ppr b, ppr c, ppr d, ppr e,
+               ppr f, ppr g, ppr h, ppr i, ppr j,
+               ppr k, ppr l]
+
+instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e,
+          Pretty f, Pretty g, Pretty h, Pretty i, Pretty j,
+          Pretty k, Pretty l, Pretty m)
+  => Pretty (a, b, c, d, e, f, g, h, i, j, k, l, m) where
+    ppr (a, b, c, d, e, f, g, h, i, j, k, l, m) =
+        tuple [ppr a, ppr b, ppr c, ppr d, ppr e,
+               ppr f, ppr g, ppr h, ppr i, ppr j,
+               ppr k, ppr l, ppr m]
+
+instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e,
+          Pretty f, Pretty g, Pretty h, Pretty i, Pretty j,
+          Pretty k, Pretty l, Pretty m, Pretty n)
+  => Pretty (a, b, c, d, e, f, g, h, i, j, k, l, m, n) where
+    ppr (a, b, c, d, e, f, g, h, i, j, k, l, m, n) =
+        tuple [ppr a, ppr b, ppr c, ppr d, ppr e,
+               ppr f, ppr g, ppr h, ppr i, ppr j,
+               ppr k, ppr l, ppr m, ppr n]
+
+instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e,
+          Pretty f, Pretty g, Pretty h, Pretty i, Pretty j,
+          Pretty k, Pretty l, Pretty m, Pretty n, Pretty o)
+  => Pretty (a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) where
+    ppr (a, b, c, d, e, f, g, h, i, j, k, l, m, n, o) =
+        tuple [ppr a, ppr b, ppr c, ppr d, ppr e,
+               ppr f, ppr g, ppr h, ppr i, ppr j,
+               ppr k, ppr l, ppr m, ppr n, ppr o]
 
 instance Pretty a => Pretty (Maybe a) where
     pprPrec _ Nothing  = empty
