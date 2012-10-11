@@ -63,6 +63,9 @@ module Text.PrettyPrint.Mainland (
     displayLazyText, prettyLazyText,
     displayPragmaLazyText, prettyPragmaLazyText,
 
+    -- * Document output
+    putDoc, hPutDoc,
+
     -- * The 'Pretty' type class for pretty printing
     Pretty(..),
 
@@ -80,10 +83,12 @@ import qualified Data.Map as Map
 import Data.Monoid
 import qualified Data.Set as Set
 import qualified Data.Text as T
+import qualified Data.Text.Lazy.IO as TIO
 import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.Builder as B
 import Data.Word
 import GHC.Real (Ratio(..))
+import System.IO (Handle)
 
 infixr 5 </>, <+/>, <//>
 infixr 6 <+>
@@ -613,6 +618,14 @@ best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
     fits  !w  (RLazyText s x)  = fits (w - fromIntegral (L.length s)) x
     fits  !w  (RPos _ x)       = fits w x
     fits  !_  (RLine _ _)      = True
+
+-- | Render a document with a width of 80 and print it to standard output.
+putDoc :: Doc -> IO ()
+putDoc = TIO.putStr . prettyLazyText 80
+
+-- | Render a document with a width of 80 and print it to the specified handle.
+hPutDoc :: Handle -> Doc -> IO ()
+hPutDoc h = TIO.hPutStr h . prettyLazyText 80
 
 #if !MIN_VERSION_base(4,5,0)
 infixr 6 <>
