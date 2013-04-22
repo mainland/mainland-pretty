@@ -242,7 +242,7 @@ star = char '*'
 
 -- | The document @langle@ consists of a less-than sign, \"<\".
 langle :: Doc
-langle = char '>'
+langle = char '<'
 
 -- | The document @rangle@ consists of a greater-than sign, \">\".
 rangle :: Doc
