@@ -453,12 +453,12 @@ displayS = go
   where
     go :: RDoc -> ShowS
     go REmpty          = id
-    go (RChar c x)     = showChar c `mappend` go x
-    go (RString _ s x) = showString s `mappend` go x
-    go (RText s x)     = showString (T.unpack s) `mappend` go x
-    go (RLazyText s x) = showString (L.unpack s) `mappend` go x
+    go (RChar c x)     = showChar c . go x
+    go (RString _ s x) = showString s . go x
+    go (RText s x)     = showString (T.unpack s) . go x
+    go (RLazyText s x) = showString (L.unpack s) . go x
     go (RPos _ x)      = go x
-    go (RLine i x)     = showString ('\n' : replicate i ' ') `mappend` go x
+    go (RLine i x)     = showString ('\n' : replicate i ' ') . go x
 
 -- | Render and display a document.
 prettyS :: Int -> Doc -> ShowS
@@ -474,17 +474,17 @@ displayPragmaS = go
   where
     go :: RDoc -> ShowS
     go REmpty          = id
-    go (RChar c x)     = showChar c `mappend` go x
-    go (RString _ s x) = showString s `mappend` go x
-    go (RText s x)     = showString (T.unpack s) `mappend` go x
-    go (RLazyText s x) = showString (L.unpack s) `mappend` go x
-    go (RPos p x)      = showChar '\n' `mappend`
-                         showString "#line " `mappend`
-                         shows (posLine p) `mappend`
-                         showChar ' ' `mappend`
-                         shows (posFile p) `mappend`
+    go (RChar c x)     = showChar c . go x
+    go (RString _ s x) = showString s . go x
+    go (RText s x)     = showString (T.unpack s) . go x
+    go (RLazyText s x) = showString (L.unpack s) . go x
+    go (RPos p x)      = showChar '\n' .
+                         showString "#line " .
+                         shows (posLine p) .
+                         showChar ' ' .
+                         shows (posFile p) .
                          go x
-    go (RLine i x)     = showString ('\n' : replicate i ' ') `mappend`
+    go (RLine i x)     = showString ('\n' : replicate i ' ') .
                          go x
 
 -- | Render and display a document with #line pragmas.
