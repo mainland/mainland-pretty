@@ -5,10 +5,11 @@ license:        BSD3
 license-file:   LICENSE
 copyright:      (c) 2006-2011 Harvard University
                 (c) 2011-2012 Geoffrey Mainland
-author:         Geoffrey Mainland <mainland@eecs.harvard.edu>
-maintainer:     mainland@eecs.harvard.edu
+                (c) 2015 Drexel University
+author:         Geoffrey Mainland <mainland@cs.drexel.edu>
+maintainer:     Geoffrey Mainland <mainland@cs.drexel.edu>
 stability:      alpha
-homepage:       http://www.eecs.harvard.edu/~mainland/
+homepage:       http://www.cs.drexel.edu/~mainland/
 category:       Text
 synopsis:       Pretty printing designed for printing source code.
 description:    Pretty printing designed for printing source code based on
