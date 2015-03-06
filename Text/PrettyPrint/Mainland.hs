@@ -22,7 +22,6 @@
 
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
-{-# LANGUAGE OverlappingInstances #-}
 
 module Text.PrettyPrint.Mainland (
     -- * The document type
