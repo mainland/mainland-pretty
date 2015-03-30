@@ -79,7 +79,7 @@ import Data.Loc (L(..),
                  posFile,
                  posLine)
 import qualified Data.Map as Map
-import Data.Monoid
+import Data.Monoid (Monoid(..), (<>))
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.IO as TIO
