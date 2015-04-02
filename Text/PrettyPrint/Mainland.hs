@@ -150,22 +150,34 @@ line = Line
 nest :: Int -> Doc -> Doc
 nest i d = Nest i d
 
--- | The document @'srcloc' x@ adds the.
+-- | The document @'srcloc' x@ tags the current line with @'locOf' x@. Only
+-- shown when running 'prettyPragma' and friends.
 srcloc :: Located a => a -> Doc
 srcloc x = SrcLoc (locOf x)
 
+-- | The document @'column' f@ is produced by calling @f@ with the current colum.
 column :: (Int -> Doc) -> Doc
 column = Column
 
+-- | The document @'column' f@ is produced by calling @f@ with the
+-- current nesting level.
 nesting :: (Int -> Doc) -> Doc
 nesting = Nesting
 
+-- | Becomes 'space' if there is room, otherwise 'line'.
+--
+-- > pretty 11 $ text "foo" <+/> text "bar" <+/> text "baz" =="foo bar baz"
+-- > pretty  7 $ text "foo" <+/> text "bar" <+/> text "baz" == "foo bar\nbaz"
+-- > pretty  6 $ text "foo" <+/> text "bar" <+/> text "baz" == "foo\nbar\nbaz"
 softline :: Doc
 softline = space `Alt` line
 
+-- | Becomes 'empty' if there is room, otherwise 'line'.
 softbreak :: Doc
 softbreak = empty `Alt` line
 
+-- | The document @'group' d@ will flatten @d@ to /one/ line if there is
+-- room for it, otherwise the original @d@.
 group :: Doc -> Doc
 group d = flatten d `Alt` d
 
@@ -183,47 +195,51 @@ flatten (SrcLoc loc) = SrcLoc loc
 flatten (Column f)   = Column (flatten . f)
 flatten (Nesting f)  = Nesting (flatten . f)
 
+-- | Concatenates two documents with a 'space' in between.
 (<+>) :: Doc -> Doc -> Doc
 x <+> y = x <> space <> y
 
+-- | Concatenates two documents with a 'line' in between.
 (</>) :: Doc -> Doc -> Doc
 x </> y = x <> line <> y
 
+-- | Concatenates two documents with a 'softline' in between.
 (<+/>) :: Doc -> Doc -> Doc
 x <+/> y = x <> softline <> y
 
+-- | Concatenates two documents with a 'softbreak' in between.
 (<//>) :: Doc -> Doc -> Doc
 x <//> y = x <> softbreak <> y
 
--- | The document @backquote@ consists of a backquote, \"`\".
+-- | The document @backquote@ consists of a backquote, @\"`\"@.
 backquote :: Doc
 backquote = char '`'
 
--- | The document @colon@ consists of a colon, \":\".
+-- | The document @colon@ consists of a colon, @\":\"@.
 colon :: Doc
 colon = char ':'
 
--- | The document @comma@ consists of a comma, \",\".
+-- | The document @comma@ consists of a comma, @\",\"@.
 comma :: Doc
 comma = char ','
 
--- | The document @dot@ consists of a period, \".\".
+-- | The document @dot@ consists of a period, @\".\"@.
 dot :: Doc
 dot = char '.'
 
--- | The document @dquote@ consists of a double quote, \"\\\"\".
+-- | The document @dquote@ consists of a double quote, @\"\\\"\"@.
 dquote :: Doc
 dquote = char '"'
 
--- | The document @equals@ consists of an equals sign, \"=\".
+-- | The document @equals@ consists of an equals sign, @\"=\"@.
 equals :: Doc
 equals = char '='
 
--- | The document @semi@ consists of a semicolon, \";\".
+-- | The document @semi@ consists of a semicolon, @\";\"@.
 semi :: Doc
 semi = char ';'
 
--- | The document @space@ consists of a space, \" \".
+-- | The document @space@ consists of a space, @\" \"@.
 space :: Doc
 space = char ' '
 
@@ -231,58 +247,58 @@ space = char ' '
 spaces :: Int -> Doc
 spaces n = text (replicate n ' ')
 
--- | The document @squote@ consists of a single quote, \"\\'\".
+-- | The document @squote@ consists of a single quote, @\"\\'\"@.
 squote :: Doc
 squote = char '\''
 
--- | The document @star@ consists of an asterisk, \"*\".
+-- | The document @star@ consists of an asterisk, @\"*\"@.
 star :: Doc
 star = char '*'
 
--- | The document @langle@ consists of a less-than sign, \"<\".
+-- | The document @langle@ consists of a less-than sign, @\"<\"@.
 langle :: Doc
 langle = char '<'
 
--- | The document @rangle@ consists of a greater-than sign, \">\".
+-- | The document @rangle@ consists of a greater-than sign, @\">\"@.
 rangle :: Doc
 rangle = char '>'
 
--- | The document @lbrace@ consists of a left brace, \"{\".
+-- | The document @lbrace@ consists of a left brace, @\"{\"@.
 lbrace :: Doc
 lbrace = char '{'
 
--- | The document @rbrace@ consists of a right brace, \"}\".
+-- | The document @rbrace@ consists of a right brace, @\"}\"@.
 rbrace :: Doc
 rbrace = char '}'
 
--- | The document @lbracket@ consists of a right brace, \"[\".
+-- | The document @lbracket@ consists of a right brace, @\"[\"@.
 lbracket :: Doc
 lbracket = char '['
 
--- | The document @rbracket@ consists of a right brace, \"]\".
+-- | The document @rbracket@ consists of a right brace, @\"]\"@.
 rbracket :: Doc
 rbracket = char ']'
 
--- | The document @lparen@ consists of a right brace, \"(\".
+-- | The document @lparen@ consists of a right brace, @\"(\"@.
 lparen :: Doc
 lparen = char '('
 
--- | The document @rparen@ consists of a right brace, \")\".
+-- | The document @rparen@ consists of a right brace, @\")\"@.
 rparen :: Doc
 rparen = char ')'
 
--- | The document @'enclose' l r d)@ encloses the document @d@ between the
+-- | The document @'enclose' l r d@ encloses the document @d@ between the
 -- documents @l@ and @r@ using @<>@. It obeys the law
 --
 -- @'enclose' l r d = l <> d <> r@
 enclose :: Doc -> Doc -> Doc -> Doc
 enclose left right d = left <> d <> right
 
--- | The document @'angles' d@ encloses the aligned document @d@ in <...>.
+-- | The document @'angles' d@ encloses the aligned document @d@ in \<...\>.
 angles :: Doc -> Doc
 angles = enclose langle rangle . align
 
--- | The document @'backquotes' d@ encloses the aligned document @d@ in `...`.
+-- | The document @'backquotes' d@ encloses the aligned document @d@ in \`...\`.
 backquotes :: Doc -> Doc
 backquotes = enclose backquote backquote . align
 
@@ -308,7 +324,7 @@ parensIf :: Bool -> Doc -> Doc
 parensIf True doc  = parens doc
 parensIf False doc = doc
 
--- | The document @'parens' d@ encloses the document @d@ in '...'.
+-- | The document @'squotes' d@ encloses the alinged document @d@ in \'...\'.
 squotes :: Doc -> Doc
 squotes = enclose squote squote . align
 
@@ -320,13 +336,12 @@ align d = column  $ \k ->
           nest (k - i) d
 
 -- | The document @'hang' i d@ renders @d@ with a nesting level set to the
--- current column plus @i@. This differs from 'indent' in that the first line of
--- @d@ /is not/ indented.
+-- current column plus @i@, /not including/ the first line.
 hang :: Int -> Doc -> Doc
 hang i d = align (nest i d)
 
--- | The document @'indent' i d@ indents @d@ @i@ spaces relative to the current
--- column. This differs from 'hang' in that the first line of @d@ /is/ indented.
+-- | The document @'indent' i d@ renders @d@ with a nesting level set to the
+-- current column plus @i@, /including/ the first line.
 indent :: Int -> Doc -> Doc
 indent i d = align (nest i (spaces i <> d))
 
@@ -339,21 +354,21 @@ folddoc _ []     = empty
 folddoc _ [x]    = x
 folddoc f (x:xs) = f x (folddoc f xs)
 
--- | The document @'spread' ds@ concatenates the documents @ds@ using @<+>@.
+-- | The document @'spread' ds@ concatenates the documents @ds@ with 'space'.
 spread :: [Doc] -> Doc
 spread = folddoc (<+>)
 
--- | The document @'stack' ds@ concatenates the documents @ds@ using @</>@.
+-- | The document @'stack' ds@ concatenates the documents @ds@ with 'line'.
 stack :: [Doc] -> Doc
 stack = folddoc (</>)
 
--- | The document @'cat' ds@ separates the documents @ds@ with the empty
--- document as long as there is room, and uses newlines when there isn't.
+-- | The document @'cat' ds@ concatenates the documents @ds@ with the 'empty'
+-- document as long as there is room, and uses 'line' when there isn't.
 cat :: [Doc] -> Doc
 cat = group . folddoc (<//>)
 
--- | The document @'sep' ds@ separates the documents @ds@ with the empty
--- document as long as there is room, and uses spaces when there isn't.
+-- | The document @'sep' ds@ concatenates the documents @ds@ with the 'space'
+-- document as long as there is room, and uses 'line' when there isn't.
 sep :: [Doc] -> Doc
 sep = group . folddoc (<+/>)
 
@@ -406,7 +421,7 @@ encloseSep left right p ds =
 tuple :: [Doc] -> Doc
 tuple = encloseSep lparen rparen comma
 
--- | The document @'tuple' ds@ separates @ds@ with commas and encloses them with
+-- | The document @'list' ds@ separates @ds@ with commas and encloses them with
 -- brackets.
 list :: [Doc] -> Doc
 list = encloseSep lbracket rbracket comma
@@ -491,6 +506,18 @@ prettyPragmaS :: Int -> Doc -> ShowS
 prettyPragmaS w x = displayPragmaS (render w x)
 
 -- | Render and convert a document to a 'String' with #line pragmas.
+--
+-- > > let loc = Loc (Pos "filename" 3 5 7) (Pos "filename" 5 7 9)
+-- > > in  putStrLn $ prettyPragma 80 $ srcloc loc <> text "foo" </> text "bar" </> text "baz"
+--
+-- will be printed as
+--
+-- @
+-- foo
+-- #line 3 "filename"
+-- bar
+-- baz
+-- @
 prettyPragma :: Int -> Doc -> String
 prettyPragma w x = prettyPragmaS w x ""
 
