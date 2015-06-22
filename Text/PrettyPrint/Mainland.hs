@@ -30,7 +30,7 @@ module Text.PrettyPrint.Mainland (
     -- * Basic combinators
     empty, text, char, string, fromText, fromLazyText,
     line, nest, srcloc, column, nesting,
-    softline, softbreak, group,
+    softline, softbreak, group, alt,
 
     -- * Operators
     (<>), (<|>), (<+>), (</>), (<+/>), (<//>),
@@ -180,6 +180,14 @@ softbreak = empty `Alt` line
 -- room for it, otherwise the original @d@.
 group :: Doc -> Doc
 group d = flatten d `Alt` d
+
+-- | The document @x \`alt\` y@ will be @x@ if there is room for it,
+-- otherwise @y@. @x@ and @y@ must represent the same thing, but can
+-- have different formatting.
+--
+-- prop> softline == space `alt` line
+alt :: Doc -> Doc -> Doc
+alt = Alt
 
 flatten :: Doc -> Doc
 flatten Empty        = Empty
