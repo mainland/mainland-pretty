@@ -33,7 +33,7 @@ module Text.PrettyPrint.Mainland (
     softline, softbreak, group,
 
     -- * Operators
-    (<>), (<+>), (</>), (<+/>), (<//>),
+    (<>), (<|>), (<+>), (</>), (<+/>), (<//>),
 
     -- * Character documents
     backquote, colon, comma, dot, dquote, equals, semi, space, spaces, squote,
@@ -93,9 +93,6 @@ import Data.Word
 import GHC.Real (Ratio(..))
 import System.IO (Handle)
 
-infixr 5 </>, <+/>, <//>
-infixr 6 <+>
-
 data Doc = Empty                -- ^ The empty document
          | Char Char            -- ^ A single character
          | String !Int String   -- ^ 'String' with associated length (to avoid
@@ -106,9 +103,8 @@ data Doc = Empty                -- ^ The empty document
          | Nest !Int Doc        -- ^ Indented document
          | SrcLoc Loc           -- ^ Tag output with source location
          | Doc `Cat` Doc        -- ^ Document concatenation
-         | Doc `Alt` Doc        -- ^ Provide alternatives. Invariants: all
-                                -- layouts of the two arguments flatten to the
-                                -- same layout
+         | Doc `Alt` Doc        -- ^ Provide alternatives. Invariant: both
+                                -- arguments must flatten to the same document.
          | Column  (Int -> Doc) -- ^ Calculate document based on current column
          | Nesting (Int -> Doc) -- ^ Calculate document based on current nesting
 
@@ -199,6 +195,19 @@ flatten (SrcLoc loc) = SrcLoc loc
 flatten (Column f)   = Column (flatten . f)
 flatten (Nesting f)  = Nesting (flatten . f)
 
+#if !MIN_VERSION_base(4,5,0)
+infixr 6 <>
+#endif /* !MIN_VERSION_base(4,5,0) */
+infixr 6 <+>
+infixr 5 </>, <+/>, <//>
+infixl 3 <|>
+
+#if !MIN_VERSION_base(4,5,0)
+-- | Concatenates two documents.
+(<>) :: Doc -> Doc -> Doc
+x <> y = x `Cat` y
+#endif /* !MIN_VERSION_base(4,5,0) */
+
 -- | Concatenates two documents with a 'space' in between.
 (<+>) :: Doc -> Doc -> Doc
 x <+> y = x <> space <> y
@@ -214,6 +223,11 @@ x <+/> y = x <> softline <> y
 -- | Concatenates two documents with a 'softbreak' in between.
 (<//>) :: Doc -> Doc -> Doc
 x <//> y = x <> softbreak <> y
+
+-- | Provide alternative layouts of the same content. Invariant: both arguments must
+-- flatten to the same document.
+(<|>) :: Doc -> Doc -> Doc
+x <|> y = x `Alt` y
 
 -- | The document @backquote@ consists of a backquote, @\"`\"@.
 backquote :: Doc
@@ -656,13 +670,6 @@ putDoc = TIO.putStr . prettyLazyText 80
 -- | Render a document with a width of 80 and print it to the specified handle.
 hPutDoc :: Handle -> Doc -> IO ()
 hPutDoc h = TIO.hPutStr h . prettyLazyText 80
-
-#if !MIN_VERSION_base(4,5,0)
-infixr 6 <>
-
-(<>) :: Doc -> Doc -> Doc
-x <> y = x `Cat` y
-#endif /* !MIN_VERSION_base(4,5,0) */
 
 instance Monoid Doc where
     mempty  = empty
