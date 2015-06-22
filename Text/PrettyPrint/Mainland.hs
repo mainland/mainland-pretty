@@ -79,7 +79,11 @@ import Data.Loc (L(..),
                  posFile,
                  posLine)
 import qualified Data.Map as Map
+#if MIN_VERSION_base(4,5,0)
 import Data.Monoid (Monoid(..), (<>))
+#else /* !MIN_VERSION_base(4,5,0) */
+import Data.Monoid (Monoid(..))
+#endif /* !MIN_VERSION_base(4,5,0) */
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.IO as TIO
