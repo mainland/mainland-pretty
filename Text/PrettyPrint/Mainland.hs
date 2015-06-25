@@ -208,17 +208,23 @@ infixl 3 <|>
 x <> y = x `Cat` y
 #endif /* !MIN_VERSION_base(4,5,0) */
 
--- | Concatenates two documents with a 'space' in between.
+-- | Concatenates two documents with a 'space' in between, with identity
+-- 'empty'.
 (<+>) :: Doc -> Doc -> Doc
-x <+> y = x <> space <> y
+Empty <+> y     = y
+x     <+> Empty = x
+x     <+> y     = x <> space <> y
 
 -- | Concatenates two documents with a 'line' in between.
 (</>) :: Doc -> Doc -> Doc
 x </> y = x <> line <> y
 
--- | Concatenates two documents with a 'softline' in between.
+-- | Concatenates two documents with a 'softline' in between, with identity
+-- 'empty'.
 (<+/>) :: Doc -> Doc -> Doc
-x <+/> y = x <> softline <> y
+Empty <+/> y     = y
+x     <+/> Empty = x
+x     <+/> y     = x <> softline <> y
 
 -- | Concatenates two documents with a 'softbreak' in between.
 (<//>) :: Doc -> Doc -> Doc
