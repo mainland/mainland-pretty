@@ -452,11 +452,11 @@ list = encloseSep lbracket rbracket comma
 
 -- | Equivalent of 'fail', but with a document instead of a string.
 faildoc :: Monad m => Doc -> m a
-faildoc = fail . show
+faildoc = fail . pretty 80
 
 -- | Equivalent of 'error', but with a document instead of a string.
 errordoc :: Doc -> a
-errordoc = error . show
+errordoc = error . pretty 80
 
 -- | Render a document given a maximum width.
 render :: Int -> Doc -> RDoc
@@ -680,9 +680,6 @@ hPutDoc h = TIO.hPutStr h . prettyLazyText 80
 instance Monoid Doc where
     mempty  = empty
     mappend = Cat
-
-instance Show Doc where
-    showsPrec _ = prettyS 80
 
 class Pretty a where
     ppr     :: a -> Doc
