@@ -585,32 +585,6 @@ displayPragmaLazyText = B.toLazyText . go
 prettyPragmaLazyText :: Int -> Doc -> L.Text
 prettyPragmaLazyText w x = displayPragmaLazyText (render w x)
 
-merge :: Maybe Pos -> Loc -> Maybe Pos
-merge  Nothing   NoLoc       = Nothing
-merge  Nothing   (Loc p _)   = Just p
-merge  (Just p)  NoLoc       = Just p
-merge  (Just p1) (Loc p2 _)  = let p = min p1 p2 in p `seq` Just p
-
-lineloc :: Maybe Pos          -- ^ Previous source position
-        -> Maybe Pos          -- ^ Current source position
-        -> (Maybe Pos, RDocS) -- ^ Current source position and position to
-                              -- output
-lineloc Nothing   Nothing          = (Nothing, id)
-lineloc Nothing   (Just p)         = (Just p, RPos p)
-lineloc (Just p1) (Just p2)
-    | posFile p2 == posFile p1 &&
-      posLine p2 == posLine p1 + 1 = (Just p2, id)
-    | otherwise                    = (Just p2, RPos p2)
-lineloc (Just p1)  Nothing
-    | posFile p2 == posFile p1 &&
-      posLine p2 == posLine p1 + 1 = (Just p2, id)
-    | otherwise                    = (Just p2, RPos p2)
-  where
-    p2 = advance p1
-
-    advance :: Pos -> Pos
-    advance (Pos f l c coff) = Pos f (l+1) c coff
-
 -- | A rendered document.
 data RDoc = REmpty                   -- ^ The empty document
           | RChar Char RDoc          -- ^ A single character
@@ -668,6 +642,32 @@ best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
     fits  !w  (RLazyText s x)  = fits (w - fromIntegral (L.length s)) x
     fits  !w  (RPos _ x)       = fits w x
     fits  !_  (RLine _ _)      = True
+
+    merge :: Maybe Pos -> Loc -> Maybe Pos
+    merge  Nothing   NoLoc       = Nothing
+    merge  Nothing   (Loc p _)   = Just p
+    merge  (Just p)  NoLoc       = Just p
+    merge  (Just p1) (Loc p2 _)  = let p = min p1 p2 in p `seq` Just p
+
+    lineloc :: Maybe Pos          -- ^ Previous source position
+            -> Maybe Pos          -- ^ Current source position
+            -> (Maybe Pos, RDocS) -- ^ Current source position and position to
+                                  -- output
+    lineloc Nothing   Nothing          = (Nothing, id)
+    lineloc Nothing   (Just p)         = (Just p, RPos p)
+    lineloc (Just p1) (Just p2)
+        | posFile p2 == posFile p1 &&
+          posLine p2 == posLine p1 + 1 = (Just p2, id)
+        | otherwise                    = (Just p2, RPos p2)
+    lineloc (Just p1)  Nothing
+        | posFile p2 == posFile p1 &&
+          posLine p2 == posLine p1 + 1 = (Just p2, id)
+        | otherwise                    = (Just p2, RPos p2)
+      where
+        p2 = advance p1
+
+        advance :: Pos -> Pos
+        advance (Pos f l c coff) = Pos f (l+1) c coff
 
 -- | Render a document with a width of 80 and print it to standard output.
 putDoc :: Doc -> IO ()
