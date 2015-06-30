@@ -30,7 +30,8 @@ module Text.PrettyPrint.Mainland (
 
     -- * Constructing documents
     -- ** Converting values into documents
-    text, char, string, fromText, fromLazyText,
+    text, bool, char, string, int, integer, float, double, rational,
+    fromText, fromLazyText,
 
     -- ** Simple documents documents
     star, colon, comma, dot, equals, semi, space, spaces,
@@ -123,6 +124,10 @@ instance Monoid Doc where
 text :: String -> Doc
 text s = String (length s) s
 
+-- | The document @bool b@ is equivalent to @text (show b)@.
+bool :: Bool -> Doc
+bool b = text (show b)
+
 -- | The document @'char' c@ consists the single character @c@.
 char :: Char -> Doc
 char '\n' = line
@@ -135,6 +140,27 @@ string ""         = empty
 string ('\n' : s) = line <> string s
 string s          = case span (/= '\n') s of
                       (xs, ys) -> text xs <> string ys
+
+-- | The document @int i@ is equivalent to @text (show i)@.
+int :: Int -> Doc
+int i = text (show i)
+
+-- | The document @integer i@ is equivalent to @text (show i)@.
+-- 'text'.
+integer :: Integer -> Doc
+integer i = text (show i)
+
+-- | The document @float f@ is equivalent to @text (show f)@.
+float :: Float -> Doc
+float f = text (show f)
+
+-- | The document @double d@ is equivalent to @text (show d)@.
+double :: Double -> Doc
+double d = text (show d)
+
+-- | The document @rational r@ is equivalent to @text (show r)@.
+rational :: Rational -> Doc
+rational r = text (show r)
 
 -- | The document @'fromText' s@ consists of the 'T.Text' @s@, which should not
 -- contain any newlines.
