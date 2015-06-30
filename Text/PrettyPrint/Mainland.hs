@@ -31,7 +31,7 @@ module Text.PrettyPrint.Mainland (
     -- * Constructing documents
     -- ** Converting values into documents
     text, bool, char, string, int, integer, float, double, rational,
-    fromText, fromLazyText,
+    strictText, lazyText,
 
     -- ** Simple documents documents
     star, colon, comma, dot, equals, semi, space, spaces,
@@ -178,15 +178,15 @@ double d = text (show d)
 rational :: Rational -> Doc
 rational r = text (show r)
 
--- | The document @'fromText' s@ consists of the 'T.Text' @s@, which should not
--- contain any newlines.
-fromText :: T.Text -> Doc
-fromText = Text
-
--- | The document @'fromLazyText' s@ consists of the 'L.Text' @s@, which should
+-- | The document @'strictText' s@ consists of the 'T.Text' @s@, which should
 -- not contain any newlines.
-fromLazyText :: L.Text -> Doc
-fromLazyText = LazyText
+strictText :: T.Text -> Doc
+strictText = Text
+
+-- | The document @'lazyText' s@ consists of the 'L.Text' @s@, which should
+-- not contain any newlines.
+lazyText :: L.Text -> Doc
+lazyText = LazyText
 
 -- | The document @star@ consists of an asterisk, @\"*\"@.
 star :: Doc
