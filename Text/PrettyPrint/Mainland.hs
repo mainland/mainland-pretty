@@ -91,6 +91,7 @@ import Data.Monoid (Monoid(..), (<>))
 import Data.Monoid (Monoid(..))
 #endif /* !MIN_VERSION_base(4,5,0) */
 import qualified Data.Set as Set
+import Data.String (IsString(..))
 import qualified Data.Text as T
 import qualified Data.Text.Lazy.IO as TIO
 import qualified Data.Text.Lazy as L
@@ -118,6 +119,9 @@ data Doc = Empty                -- ^ The empty document
 instance Monoid Doc where
     mempty  = empty
     mappend = Cat
+
+instance IsString Doc where
+    fromString s = string s
 
 -- | The document @'text' s@ consists of the string @s@, which should not
 -- contain any newlines. For a string that may include newlines, use 'string'.
