@@ -781,17 +781,31 @@ class Pretty a where
     pprPrec _  = ppr
     pprList xs = list (map ppr xs)
 
+instance Pretty a => Pretty [a] where
+    ppr = pprList
+
+instance Pretty a => Pretty (Maybe a) where
+    pprPrec _ Nothing  = empty
+    pprPrec p (Just a) = pprPrec p a
+
+instance Pretty Bool where
+    ppr = bool
+
+instance Pretty Char where
+    ppr     = char
+    pprList = string
+
 instance Pretty Int where
-    ppr = text . show
+    ppr = int
 
 instance Pretty Integer where
-    ppr = text . show
+    ppr = integer
 
 instance Pretty Float where
-    ppr = text . show
+    ppr = float
 
 instance Pretty Double where
-    ppr = text . show
+    ppr = double
 
 ratioPrec, ratioPrec1 :: Int
 ratioPrec  = 7  -- Precedence of ':%' constructor
@@ -803,21 +817,64 @@ instance (Integral a, Pretty a) => Pretty (Ratio a)  where
         parensIf (p > ratioPrec) $
         pprPrec ratioPrec1 x <+> char '%' <+> pprPrec ratioPrec1 y
 
-instance Pretty Bool where
+instance Pretty Word8 where
     ppr = text . show
 
-instance Pretty Char where
-    ppr     = text . show
-    pprList = text . show
+instance Pretty Word16 where
+    ppr = text . show
+
+instance Pretty Word32 where
+    ppr = text . show
+
+instance Pretty Word64 where
+    ppr = text . show
+
+instance Pretty Int8 where
+    ppr = text . show
+
+instance Pretty Int16 where
+    ppr = text . show
+
+instance Pretty Int32 where
+    ppr = text . show
+
+instance Pretty Int64 where
+    ppr = text . show
 
 instance Pretty T.Text where
-    ppr = text . show
+    ppr = strictText
 
 instance Pretty L.Text where
-    ppr = text . show
+    ppr = lazyText
 
-instance Pretty a => Pretty [a] where
-    ppr = pprList
+instance Pretty Pos where
+    ppr p@(Pos _ l c _) =
+        text (posFile p) <> colon <> ppr l <> colon <> ppr c
+
+instance Pretty Loc where
+    ppr NoLoc = text "<no location info>"
+
+    ppr (Loc p1@(Pos f1 l1 c1 _) p2@(Pos f2 l2 c2 _))
+        | f1 == f2   = text (posFile p1) <> colon <//> pprLineCol l1 c1 l2 c2
+        | otherwise  = ppr p1 <> text "-" <> ppr p2
+      where
+        pprLineCol :: Int -> Int -> Int -> Int -> Doc
+        pprLineCol l1 c1 l2 c2
+            | l1 == l2 && c1 == c2  =  ppr l1 <//> colon <//> ppr c1
+            | l1 == l2 && c1 /= c2  =  ppr l1 <//> colon <//>
+                                       ppr c1 <> text "-" <> ppr c2
+            | otherwise             =  ppr l1 <//> colon <//> ppr c1
+                                       <> text "-" <>
+                                       ppr l2 <//> colon <//> ppr c2
+
+instance Pretty x => Pretty (L x) where
+    pprPrec p (L _ x) = pprPrec p x
+
+instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
+    ppr = pprList . Map.toList
+
+instance Pretty a => Pretty (Set.Set a) where
+    ppr = pprList . Set.toList
 
 instance Pretty () where
     ppr () =
@@ -922,60 +979,3 @@ instance (Pretty a, Pretty b, Pretty c, Pretty d, Pretty e,
         tuple [ppr a, ppr b, ppr c, ppr d, ppr e,
                ppr f, ppr g, ppr h, ppr i, ppr j,
                ppr k, ppr l, ppr m, ppr n, ppr o]
-
-instance Pretty a => Pretty (Maybe a) where
-    pprPrec _ Nothing  = empty
-    pprPrec p (Just a) = pprPrec p a
-
-instance Pretty Pos where
-    ppr p@(Pos _ l c _) =
-        text (posFile p) <> colon <> ppr l <> colon <> ppr c
-
-instance Pretty Loc where
-    ppr NoLoc = text "<no location info>"
-
-    ppr (Loc p1@(Pos f1 l1 c1 _) p2@(Pos f2 l2 c2 _))
-        | f1 == f2   = text (posFile p1) <> colon <//> pprLineCol l1 c1 l2 c2
-        | otherwise  = ppr p1 <> text "-" <> ppr p2
-      where
-        pprLineCol :: Int -> Int -> Int -> Int -> Doc
-        pprLineCol l1 c1 l2 c2
-            | l1 == l2 && c1 == c2  =  ppr l1 <//> colon <//> ppr c1
-            | l1 == l2 && c1 /= c2  =  ppr l1 <//> colon <//>
-                                       ppr c1 <> text "-" <> ppr c2
-            | otherwise             =  ppr l1 <//> colon <//> ppr c1
-                                       <> text "-" <>
-                                       ppr l2 <//> colon <//> ppr c2
-
-instance Pretty x => Pretty (L x) where
-    pprPrec p (L _ x) = pprPrec p x
-
-instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
-    ppr = pprList . Map.toList
-
-instance Pretty a => Pretty (Set.Set a) where
-    ppr = pprList . Set.toList
-
-instance Pretty Word8 where
-    ppr = text . show
-
-instance Pretty Word16 where
-    ppr = text . show
-
-instance Pretty Word32 where
-    ppr = text . show
-
-instance Pretty Word64 where
-    ppr = text . show
-
-instance Pretty Int8 where
-    ppr = text . show
-
-instance Pretty Int16 where
-    ppr = text . show
-
-instance Pretty Int32 where
-    ppr = text . show
-
-instance Pretty Int64 where
-    ppr = text . show
