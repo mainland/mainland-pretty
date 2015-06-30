@@ -51,7 +51,7 @@ module Text.PrettyPrint.Mainland (
     -- * Combining lists of documents
     folddoc, spread, stack, cat, sep,
     punctuate, commasep, semisep,
-    encloseSep, tuple, list,
+    enclosesep, tuple, list,
 
     -- ** Alignment and indentation
     align, hang, indent,
@@ -423,14 +423,14 @@ commasep = align . sep . punctuate comma
 semisep :: [Doc] -> Doc
 semisep = align . sep . punctuate semi
 
--- | The document @'encloseSep' l r p ds@ separates @ds@ with the punctuation @p@
+-- | The document @'enclosesep' l r p ds@ separates @ds@ with the punctuation @p@
 -- and encloses the result using @l@ and @r@. When wrapped, punctuation appears
 -- at the end of the line. The enclosed portion of the document is aligned one
 -- column to the right of the opening document.
 --
 -- @
 -- \> ws = map text (words \"The quick brown fox jumps over the lazy dog\")
--- \> test = pretty 15 (encloseSep lparen rparen comma ws)
+-- \> test = pretty 15 (enclosesep lparen rparen comma ws)
 -- @
 --
 -- will be layed out as:
@@ -442,8 +442,8 @@ semisep = align . sep . punctuate semi
 --  the, lazy,
 --  dog)
 -- @
-encloseSep :: Doc -> Doc -> Doc -> [Doc] -> Doc
-encloseSep left right p ds =
+enclosesep :: Doc -> Doc -> Doc -> [Doc] -> Doc
+enclosesep left right p ds =
     case ds of
       [] ->  left <> right
       [d] -> left <> d <> right
@@ -452,12 +452,12 @@ encloseSep left right p ds =
 -- | The document @'tuple' ds@ separates @ds@ with commas and encloses them with
 -- parentheses.
 tuple :: [Doc] -> Doc
-tuple = encloseSep lparen rparen comma
+tuple = enclosesep lparen rparen comma
 
 -- | The document @'list' ds@ separates @ds@ with commas and encloses them with
 -- brackets.
 list :: [Doc] -> Doc
-list = encloseSep lbracket rbracket comma
+list = enclosesep lbracket rbracket comma
 
 -- | The document @'align' d@ renders @d@ with a nesting level set to the current
 -- column.
