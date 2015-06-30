@@ -325,8 +325,8 @@ x     <+/> y     = x <> softline <> y
 (<//>) :: Doc -> Doc -> Doc
 x <//> y = x <> softbreak <> y
 
--- | Provide alternative layouts of the same content. Invariant: both arguments must
--- flatten to the same document.
+-- | Provide alternative layouts of the same content. Invariant: both arguments
+-- must flatten to the same document.
 (<|>) :: Doc -> Doc -> Doc
 x <|> y = x `Alt` y
 
