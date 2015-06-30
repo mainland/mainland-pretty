@@ -56,6 +56,7 @@ module Text.PrettyPrint.Mainland (
     -- ** Alignment and indentation
     align, hang, indent,
     nest, column, nesting,
+    width, fill, fillbreak,
 
     -- ** Utilities
     faildoc, errordoc,
@@ -489,6 +490,29 @@ column = Column
 -- current nesting level.
 nesting :: (Int -> Doc) -> Doc
 nesting = Nesting
+
+-- | The document @'width' d f@ is produced by concatenating @d@ with the result
+-- of calling @f@ with the width of the document @d@.
+width :: Doc -> (Int -> Doc) -> Doc
+width d f = column $ \k1 -> d <> (column $ \k2 -> f (k2 - k1))
+
+-- | The document @'fill' i d@ renders document @x@, appending
+-- @space@s until the width is equal to @i@. If the width of @d@ is already
+-- greater than @i@, nothing is appended.
+fill :: Int -> Doc -> Doc
+fill f d = width d $ \w ->
+           if w >= f
+           then empty
+           else spaces (f - w)
+
+-- | The document @'fillbreak' i d@ renders document @d@, appending @'space'@s
+-- until the width is equal to @i@. If the width of @d@ is already greater than
+-- @i@, the nesting level is increased by @i@ and a @line@ is appended.
+fillbreak :: Int -> Doc -> Doc
+fillbreak f d = width d $ \w ->
+                if (w > f)
+                then nest f line
+                else spaces (f - w)
 
 -- | Equivalent of 'fail', but with a document instead of a string.
 faildoc :: Monad m => Doc -> m a
