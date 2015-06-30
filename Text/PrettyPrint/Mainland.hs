@@ -480,7 +480,8 @@ indent i d = align (nest i (spaces i <> d))
 nest :: Int -> Doc -> Doc
 nest i d = Nest i d
 
--- | The document @'column' f@ is produced by calling @f@ with the current colum.
+-- | The document @'column' f@ is produced by calling @f@ with the current
+-- column.
 column :: (Int -> Doc) -> Doc
 column = Column
 
