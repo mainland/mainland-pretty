@@ -102,20 +102,31 @@ import GHC.Real (Ratio(..))
 import System.IO (Handle)
 
 -- | The abstract type of documents.
-data Doc = Empty                -- ^ The empty document
-         | Char Char            -- ^ A single character
-         | String !Int String   -- ^ 'String' with associated length (to avoid
-                                -- recomputation)
-         | Text T.Text          -- ^ 'T.Text'
-         | LazyText L.Text      -- ^ 'L.Text'
-         | Line                 -- ^ Newline
-         | Nest !Int Doc        -- ^ Indented document
-         | SrcLoc Loc           -- ^ Tag output with source location
-         | Doc `Cat` Doc        -- ^ Document concatenation
-         | Doc `Alt` Doc        -- ^ Provide alternatives. Invariant: both
-                                -- arguments must flatten to the same document.
-         | Column  (Int -> Doc) -- ^ Calculate document based on current column
-         | Nesting (Int -> Doc) -- ^ Calculate document based on current nesting
+data Doc -- | The empty document
+         =  Empty
+         -- | A single character
+         | Char {-# UNPACK #-} !Char
+         -- | 'String' with associated length (to avoid recomputation)
+         | String {-# UNPACK #-} !Int String
+         -- | 'T.Text'
+         | Text T.Text
+         -- | 'L.Text'
+         | LazyText L.Text
+         -- | Newline
+         | Line
+         -- | Indented document
+         | Nest {-# UNPACK #-} !Int Doc
+         -- | Tag output with source location
+         | SrcLoc Loc
+         -- | Document concatenation
+         | Doc `Cat` Doc
+         -- | Provide alternatives. Invariant: both arguments must flatten to
+         -- the same document.
+         | Doc `Alt` Doc
+         -- | Calculate document based on current column
+         | Column  (Int -> Doc)
+         -- | Calculate document based on current nesting
+         | Nesting (Int -> Doc)
 
 instance Monoid Doc where
     mempty  = empty
@@ -523,15 +534,20 @@ errordoc :: Doc -> a
 errordoc = error . pretty 80
 
 -- | A rendered document.
-data RDoc = REmpty                   -- ^ The empty document
-          | RChar Char RDoc          -- ^ A single character
-          | RString !Int String RDoc -- ^ 'String' with associated length (to
-                                     -- avoid recomputation)
-          | RText T.Text RDoc        -- ^ 'T.Text'
-          | RLazyText L.Text RDoc    -- ^ 'L.Text'
-          | RPos Pos RDoc            -- ^ Tag output with source location
-          | RLine !Int RDoc          -- ^ A newline with the indentation of the
-                                     -- subsequent line
+data RDoc -- | The empty document
+          = REmpty
+          -- | A single character
+          | RChar {-# UNPACK #-} !Char RDoc
+          -- | 'String' with associated length (to avoid recomputation)
+          | RString {-# UNPACK #-} !Int String RDoc
+          -- | 'T.Text'
+          | RText T.Text RDoc
+          -- | 'L.Text'
+          | RLazyText L.Text RDoc
+          -- | Tag output with source location
+          | RPos Pos RDoc
+          -- | A newline with the indentation of the subsequent line
+          | RLine {-# UNPACK #-} !Int RDoc
 
 -- | Render a document given a maximum width.
 render :: Int -> Doc -> RDoc
@@ -539,8 +555,10 @@ render w x = best w 0 x
 
 type RDocS = RDoc -> RDoc
 
-data Docs = Nil                -- ^ No document.
-          | Cons !Int Doc Docs -- ^ Indentation, document and tail
+data Docs -- | No document.
+          = Nil
+          -- | Indentation, document and tail
+          | Cons {-# UNPACK #-} !Int Doc Docs
 
 best :: Int -> Int -> Doc -> RDoc
 best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
