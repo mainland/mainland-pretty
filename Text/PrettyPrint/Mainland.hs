@@ -70,7 +70,7 @@ module Text.PrettyPrint.Mainland (
     displayPragmaLazyText, prettyPragmaLazyText,
 
     -- * Document output
-    putDoc, hPutDoc,
+    putDoc, putDocLn, hPutDoc, hPutDocLn,
 
     -- * The 'Pretty' type class for pretty printing
     Pretty(..)
@@ -682,9 +682,19 @@ prettyPragmaLazyText w x = displayPragmaLazyText (render w x)
 putDoc :: Doc -> IO ()
 putDoc = TIO.putStr . prettyLazyText 80
 
+-- | Render a document with a width of 80 and print it to standard output,
+-- followed by a newline.
+putDocLn :: Doc -> IO ()
+putDocLn = TIO.putStrLn . prettyLazyText 80
+
 -- | Render a document with a width of 80 and print it to the specified handle.
 hPutDoc :: Handle -> Doc -> IO ()
 hPutDoc h = TIO.hPutStr h . prettyLazyText 80
+
+-- | Render a document with a width of 80 and print it to the specified handle,
+-- followed by a newline.
+hPutDocLn :: Handle -> Doc -> IO ()
+hPutDocLn h = TIO.hPutStrLn h . prettyLazyText 80
 
 class Pretty a where
 #if __GLASGOW_HASKELL__ >= 708
