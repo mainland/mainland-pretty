@@ -42,7 +42,7 @@ module Text.PrettyPrint.Mainland (
     empty,
     srcloc, line, softline, softbreak,
     (<>), (<|>), (<+>), (</>), (<+/>), (<//>),
-    group,
+    group, flatten,
 
     -- ** Wrapping documents in delimiters
     enclose, squotes, dquotes, angles, backquotes, braces, brackets, parens,
@@ -335,6 +335,7 @@ x <|> y = x `Alt` y
 group :: Doc -> Doc
 group d = flatten d `Alt` d
 
+-- | The document @'flatten' d@ will flatten @d@ to /one/ line.
 flatten :: Doc -> Doc
 flatten Empty        = Empty
 flatten (Char c)     = Char c
