@@ -390,6 +390,7 @@ parens = enclose lparen rparen . align
 parensIf :: Bool -> Doc -> Doc
 parensIf True doc  = parens doc
 parensIf False doc = doc
+
 -- | The document @'folddoc' f ds@ obeys the laws:
 --
 -- * @'folddoc' f [] = 'empty'@
