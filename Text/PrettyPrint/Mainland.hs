@@ -688,7 +688,9 @@ displayPragmaS = go
                          showString "#line " .
                          shows (posLine p) .
                          showChar ' ' .
+                         showChar '"' .
                          shows (posFile p) .
+                         showChar '"' .
                          go x
     go (RLine i x)     = showString ('\n' : replicate i ' ') .
                          go x
@@ -742,12 +744,18 @@ displayPragmaLazyText = B.toLazyText . go
     go (RString _ s x) = B.fromString s `mappend` go x
     go (RPos p x)      = B.singleton '\n' `mappend`
                          B.fromString "#line " `mappend`
-                         (go . renderCompact . ppr) (posLine p) `mappend`
+                         renderPosLine p `mappend`
                          B.singleton ' ' `mappend`
-                         (go . renderCompact . ppr) (posFile p) `mappend`
+                         renderPosFile p `mappend`
                          go x
     go (RLine i x)     = B.fromString ('\n':replicate i ' ') `mappend`
                          go x
+
+    renderPosLine :: Pos -> B.Builder
+    renderPosLine = go . renderCompact . ppr . posLine
+
+    renderPosFile :: Pos -> B.Builder
+    renderPosFile = go . renderCompact . enclose dquote dquote . ppr . posFile
 
 -- | Render and convert a document to 'L.Text' with #line pragmas. Uses a builder.
 prettyPragmaLazyText :: Int -> Doc -> L.Text
