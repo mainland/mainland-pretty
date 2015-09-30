@@ -584,7 +584,7 @@ best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
           Nest j x   -> be p p' k f (Cons (i+j) x ds)
           x `Alt` y  -> better k f (be p p' k id (Cons i x ds))
                                    (be p p' k id (Cons i y ds))
-          SrcLoc loc -> be p (merge p' loc) k f ds
+          SrcLoc loc -> be p (updatePos p' loc) k f ds
           Column g   -> be p p' k f (Cons i (g k) ds)
           Nesting g  -> be p p' k f (Cons i (g i) ds)
       where
@@ -604,11 +604,10 @@ best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
     fits  !w  (RPos _ x)       = fits w x
     fits  !_  (RLine _ _)      = True
 
-    merge :: Maybe Pos -> Loc -> Maybe Pos
-    merge  Nothing   NoLoc       = Nothing
-    merge  Nothing   (Loc p _)   = Just p
-    merge  (Just p)  NoLoc       = Just p
-    merge  (Just p1) (Loc p2 _)  = let p = min p1 p2 in p `seq` Just p
+    updatePos :: Maybe Pos -> Loc -> Maybe Pos
+    updatePos Nothing  NoLoc     = Nothing
+    updatePos _        (Loc p _) = Just p
+    updatePos (Just p) NoLoc     = Just p
 
     lineloc :: Maybe Pos          -- ^ Previous source position
             -> Maybe Pos          -- ^ Current source position
