@@ -562,33 +562,44 @@ data Docs -- | No document.
           -- | Indentation, document and tail
           | Cons {-# UNPACK #-} !Int Doc Docs
 
+-- | A pending line.
+data PLine -- | The document before the line and the indentation needed after
+           -- the newline.
+           = PLine RDocS {-# UNPACK #-} !Int
+
 best :: Int -> Int -> Doc -> RDoc
-best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
+best !w k x = be Nothing Nothing Nothing k id (Cons 0 x Nil)
   where
-    be :: Maybe Pos -- ^ Previous source position
-       -> Maybe Pos -- ^ Current source position
-       -> Int       -- ^ Current column
+    be :: Maybe Pos   -- ^ Previous source position
+       -> Maybe Pos   -- ^ Current source position
+       -> Maybe PLine -- ^ Pending line
+       -> Int         -- ^ Current column
        -> RDocS
        -> Docs
        -> RDoc
-    be  _ _  !_  f Nil           = f REmpty
-    be  p p' !k  f (Cons i d ds) =
+    be _ _  !Nothing             !_ f Nil           = f REmpty
+    be _ _  !(Just (PLine f' i)) !_ f Nil           = (f' . RLine i . f) REmpty
+    be p p' !pl                  !k f (Cons i d ds) =
         case d of
-          Empty      -> be p p' k f ds
-          Char c     -> be p p' (k+1) (f . RChar c) ds
-          String l s -> be p p' (k+l) (f . RString l s) ds
-          Text s     -> be p p' (k+T.length s) (f . RText s) ds
-          LazyText s -> be p p' (k+fromIntegral (L.length s)) (f . RLazyText s) ds
-          Line       -> (f . pragma . RLine i) (be p'' Nothing i id ds)
-          x `Cat` y  -> be p p' k f (Cons i x (Cons i y ds))
-          Nest j x   -> be p p' k f (Cons (i+j) x ds)
-          x `Alt` y  -> better k f (be p p' k id (Cons i x ds))
-                                   (be p p' k id (Cons i y ds))
-          SrcLoc loc -> be p (updatePos p' loc) k f ds
-          Column g   -> be p p' k f (Cons i (g k) ds)
-          Nesting g  -> be p p' k f (Cons i (g i) ds)
+          Empty      -> be p p' pl k f ds
+          Char c     -> unPLine pl $ be p p' Nothing (k+1) (f . RChar c) ds
+          String l s -> unPLine pl $ be p p' Nothing (k+l) (f . RString l s) ds
+          Text s     -> unPLine pl $ be p p' Nothing (k+T.length s) (f . RText s) ds
+          LazyText s -> unPLine pl $ be p p' Nothing (k+fromIntegral (L.length s)) (f . RLazyText s) ds
+          Line       -> unPLine pl $ be p'' Nothing (Just (PLine f i)) i id ds
+          x `Cat` y  -> be p p' pl k f (Cons i x (Cons i y ds))
+          Nest j x   -> be p p' pl k f (Cons (i+j) x ds)
+          x `Alt` y  -> better k f (be p p' pl k id (Cons i x ds))
+                                   (be p p' pl k id (Cons i y ds))
+          SrcLoc loc -> be p (updatePos p' loc) pl k f ds
+          Column g   -> be p p' pl k f (Cons i (g k) ds)
+          Nesting g  -> be p p' pl k f (Cons i (g i) ds)
       where
         (p'', pragma) = lineloc p p'
+
+        unPLine :: Maybe PLine -> RDoc -> RDoc
+        unPLine Nothing            rdoc = rdoc
+        unPLine (Just (PLine f i)) rdoc = (f . pragma . RLine i) rdoc
 
     better :: Int -> RDocS -> RDoc -> RDoc -> RDoc
     better !k f x y | fits (w - k) x = f x
