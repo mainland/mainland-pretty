@@ -620,13 +620,8 @@ best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
         | posFile p2 == posFile p1 &&
           posLine p2 == posLine p1 + 1 = (Just p2, id)
         | otherwise                    = (Just p2, RPos p2)
-    lineloc (Just p1)  Nothing
-        | posFile p2 == posFile p1 &&
-          posLine p2 == posLine p1 + 1 = (Just p2, id)
-        | otherwise                    = (Just p2, RPos p2)
+    lineloc (Just p1)  Nothing         = (Just (advance p1), id)
       where
-        p2 = advance p1
-
         advance :: Pos -> Pos
         advance (Pos f l c coff) = Pos f (l+1) c coff
 
