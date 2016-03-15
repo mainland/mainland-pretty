@@ -693,9 +693,7 @@ displayPragmaS = go
                          showString "#line " .
                          shows (posLine p) .
                          showChar ' ' .
-                         showChar '"' .
                          shows (posFile p) .
-                         showChar '"' .
                          go x
     go (RLine i x)     = showString ('\n' : replicate i ' ') .
                          go x
