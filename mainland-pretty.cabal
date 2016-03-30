@@ -5,7 +5,7 @@ license:        BSD3
 license-file:   LICENSE
 copyright:      (c) 2006-2011 Harvard University
                 (c) 2011-2012 Geoffrey Mainland
-                (c) 2015 Drexel University
+                (c) 2015-2016 Drexel University
 author:         Geoffrey Mainland <mainland@cs.drexel.edu>
 maintainer:     Geoffrey Mainland <mainland@cs.drexel.edu>
 stability:      alpha
