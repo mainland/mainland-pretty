@@ -4,7 +4,7 @@
 --                (c) 2011-2012 Geoffrey Mainland
 --                (c) 2015-2016 Drexel University
 -- License     :  BSD-style
--- Maintainer  :  mainland@eecs.harvard.edu
+-- Maintainer  :  mainland@drexel.edu
 --
 -- Stability   :  provisional
 -- Portability :  portable
