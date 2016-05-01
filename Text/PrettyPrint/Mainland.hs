@@ -548,7 +548,9 @@ data RDoc -- | The empty document
           | RLazyText L.Text RDoc
           -- | Tag output with source location
           | RPos Pos RDoc
-          -- | A newline with the indentation of the subsequent line
+          -- | A newline with the indentation of the subsequent line. If this is
+          -- followed by a 'RPos', output an appropriate #line pragma /before/
+          -- the newline.
           | RLine {-# UNPACK #-} !Int RDoc
 
 -- | Render a document given a maximum width.
@@ -563,32 +565,61 @@ data Docs -- | No document.
           | Cons {-# UNPACK #-} !Int Doc Docs
 
 best :: Int -> Int -> Doc -> RDoc
-best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
+best !w k x = be True Nothing Nothing k id (Cons 0 x Nil)
   where
-    be :: Maybe Pos -- ^ Previous source position
+    be :: Bool      -- ^ Did a newline just occur?
+       -> Maybe Pos -- ^ Previous source position
        -> Maybe Pos -- ^ Current source position
        -> Int       -- ^ Current column
-       -> RDocS
-       -> Docs
+       -> RDocS     -- ^ Our continuation
+       -> Docs      -- ^ 'Docs' to layout
        -> RDoc
-    be  _ _  !_  f Nil           = f REmpty
-    be  p p' !k  f (Cons i d ds) =
+    be _  _ _  !_  f Nil           = f REmpty
+    be nl p p' !k  f (Cons i d ds) =
         case d of
-          Empty      -> be p p' k f ds
-          Char c     -> be p p' (k+1) (f . RChar c) ds
-          String l s -> be p p' (k+l) (f . RString l s) ds
-          Text s     -> be p p' (k+T.length s) (f . RText s) ds
-          LazyText s -> be p p' (k+fromIntegral (L.length s)) (f . RLazyText s) ds
-          Line       -> (f . pragma . RLine i) (be p'' Nothing i id ds)
-          x `Cat` y  -> be p p' k f (Cons i x (Cons i y ds))
-          Nest j x   -> be p p' k f (Cons (i+j) x ds)
-          x `Alt` y  -> better k f (be p p' k id (Cons i x ds))
-                                   (be p p' k id (Cons i y ds))
-          SrcLoc loc -> be p (updatePos p' loc) k f ds
-          Column g   -> be p p' k f (Cons i (g k) ds)
-          Nesting g  -> be p p' k f (Cons i (g i) ds)
+          Empty      -> be nl    p p' k f ds
+          Char c     -> be False p p' (k+1) (f . prag . RChar c) ds
+          String l s -> be False p p' (k+l) (f . prag . RString l s) ds
+          Text s     -> be False p p' (k+T.length s) (f . prag . RText s) ds
+          LazyText s -> be False p p' (k+fromIntegral (L.length s)) (f . prag . RLazyText s) ds
+          Line       -> (f . RLine i) (be True p'' Nothing i id ds)
+          x `Cat` y  -> be nl p p' k f (Cons i x (Cons i y ds))
+          Nest j x   -> be nl p p' k f (Cons (i+j) x ds)
+          x `Alt` y  -> better k f (be nl p p' k id (Cons i x ds))
+                                   (be nl p p' k id (Cons i y ds))
+          SrcLoc loc -> be nl p (updatePos p' loc) k f ds
+          Column g   -> be nl p p' k f (Cons i (g k) ds)
+          Nesting g  -> be nl p p' k f (Cons i (g i) ds)
       where
-        (p'', pragma) = lineloc p p'
+        p'' :: Maybe Pos
+        prag :: RDocS
+        (p'', prag) = lineLoc p p'
+
+        -- | Given the previous and current position, figure out the actual
+        -- current position and return a 'RDocS' that will add a #line pragma
+        -- (in the form of an 'RPos') if necessary.
+        lineLoc :: Maybe Pos          -- ^ Previous source position
+                -> Maybe Pos          -- ^ Current source position
+                -> (Maybe Pos, RDocS) -- ^ Current source position and position
+                                      -- pragma
+        lineLoc Nothing   Nothing       = (Nothing, noPragma)
+        lineLoc Nothing   (Just p)      = (Just p, pragma p)
+        lineLoc (Just p1) (Just p2)
+            | posFile p2 == posFile p1 &&
+              posLine p2 == posLine p1 + 1 = (Just p2, noPragma)
+            | otherwise                    = (Just p2, pragma p2)
+        lineLoc (Just p1) Nothing       = (Just (advance p1), noPragma)
+          where
+            advance :: Pos -> Pos
+            advance (Pos f l c coff) = Pos f (l+1) c coff
+
+        noPragma :: RDocS
+        noPragma = id
+
+        -- We only insert a pragma if a newline was just output.
+        pragma :: Pos -> RDocS
+        pragma p | nl        = RPos p
+                 | otherwise = id
 
     better :: Int -> RDocS -> RDoc -> RDoc -> RDoc
     better !k f x y | fits (w - k) x = f x
@@ -608,21 +639,6 @@ best !w k x = be Nothing Nothing k id (Cons 0 x Nil)
     updatePos Nothing  NoLoc     = Nothing
     updatePos _        (Loc p _) = Just p
     updatePos (Just p) NoLoc     = Just p
-
-    lineloc :: Maybe Pos          -- ^ Previous source position
-            -> Maybe Pos          -- ^ Current source position
-            -> (Maybe Pos, RDocS) -- ^ Current source position and position to
-                                  -- output
-    lineloc Nothing   Nothing          = (Nothing, id)
-    lineloc Nothing   (Just p)         = (Just p, RPos p)
-    lineloc (Just p1) (Just p2)
-        | posFile p2 == posFile p1 &&
-          posLine p2 == posLine p1 + 1 = (Just p2, id)
-        | otherwise                    = (Just p2, RPos p2)
-    lineloc (Just p1)  Nothing         = (Just (advance p1), id)
-      where
-        advance :: Pos -> Pos
-        advance (Pos f l c coff) = Pos f (l+1) c coff
 
 -- | Render a document without indentation on infinitely long lines. Since no
 -- \'pretty\' printing is involved, this renderer is fast. The resulting output
@@ -678,16 +694,25 @@ displayPragmaS = go
     go (RString _ s x) = showString s . go x
     go (RText s x)     = showString (T.unpack s) . go x
     go (RLazyText s x) = showString (L.unpack s) . go x
-    go (RPos p x)      = showChar '\n' .
-                         showString "#line " .
-                         shows (posLine p) .
-                         showChar ' ' .
-                         showChar '"' .
-                         showString (posFile p) .
-                         showChar '"' .
+    go (RPos p x)      = showPos p .
+                         showChar '\n' .
                          go x
-    go (RLine i x)     = showString ('\n' : replicate i ' ') .
-                         go x
+    go (RLine i x)     = case x of
+                           RPos p x' -> showChar '\n' .
+                                        showPos p .
+                                        showString ('\n' : replicate i ' ') .
+                                        go x'
+                           _         -> showString ('\n' : replicate i ' ') .
+                                        go x
+
+    showPos :: Pos -> ShowS
+    showPos p =
+        showString "#line " .
+        shows (posLine p) .
+        showChar ' ' .
+        showChar '"' .
+        showString (posFile p) .
+        showChar '"'
 
 -- | Render and display a document with #line pragmas.
 prettyPragmaS :: Int -> Doc -> ShowS
@@ -736,14 +761,23 @@ displayPragmaLazyText = B.toLazyText . go
     go (RText s x)     = B.fromText s `mappend` go x
     go (RLazyText s x) = B.fromLazyText s `mappend` go x
     go (RString _ s x) = B.fromString s `mappend` go x
-    go (RPos p x)      = B.singleton '\n' `mappend`
-                         B.fromString "#line " `mappend`
-                         renderPosLine p `mappend`
-                         B.singleton ' ' `mappend`
-                         renderPosFile p `mappend`
+    go (RPos p x)      = displayPos p `mappend`
+                         B.singleton '\n' `mappend`
                          go x
-    go (RLine i x)     = B.fromString ('\n':replicate i ' ') `mappend`
-                         go x
+    go (RLine i x)     = case x of
+                           RPos p x' -> B.singleton '\n' `mappend`
+                                        displayPos p `mappend`
+                                        B.fromString ('\n':replicate i ' ') `mappend`
+                                        go x'
+                           _         -> B.fromString ('\n':replicate i ' ') `mappend`
+                                        go x
+
+    displayPos :: Pos -> B.Builder
+    displayPos p =
+        B.fromString "#line " `mappend`
+        renderPosLine p `mappend`
+        B.singleton ' ' `mappend`
+        renderPosFile p
 
     renderPosLine :: Pos -> B.Builder
     renderPosLine = go . renderCompact . ppr . posLine
