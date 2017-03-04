@@ -310,9 +310,11 @@ Empty <+> y     = y
 x     <+> Empty = x
 x     <+> y     = x <> space <> y
 
--- | Concatenates two documents with a 'line' in between.
+-- | Concatenates two documents with a 'line' in between, with identity 'empty'.
 (</>) :: Doc -> Doc -> Doc
-x </> y = x <> line <> y
+Empty </> y     = y
+x     </> Empty = x
+x     </> y     = x <> line <> y
 
 -- | Concatenates two documents with a 'softline' in between, with identity
 -- 'empty'.
