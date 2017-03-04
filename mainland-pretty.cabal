@@ -9,7 +9,7 @@ copyright:      (c) 2006-2011 Harvard University
 author:         Geoffrey Mainland <mainland@drexel.edu>
 maintainer:     Geoffrey Mainland <mainland@drexel.edu>
 stability:      alpha
-homepage:       http://www.cs.drexel.edu/~mainland/
+homepage:       https://github.com/mainland/mainland-pretty
 category:       Text
 synopsis:       Pretty printing designed for printing source code.
 description:    Pretty printing designed for printing source code based on
