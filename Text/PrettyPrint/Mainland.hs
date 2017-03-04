@@ -2,7 +2,7 @@
 -- Module      :  Text.PrettyPrint.Mainland
 -- Copyright   :  (c) 2006-2011 Harvard University
 --                (c) 2011-2012 Geoffrey Mainland
---                (c) 2015-2016 Drexel University
+--                (c) 2015-2017 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 --
