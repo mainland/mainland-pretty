@@ -31,6 +31,7 @@ module Text.PrettyPrint.Mainland.Class (
   ) where
 
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.Complex (Complex, realPart, imagPart)
 import Data.Int
 import Data.Loc (L(..),
                  Loc(..),
@@ -96,6 +97,14 @@ instance (Integral a, Pretty a) => Pretty (Ratio a)  where
     pprPrec p x =
         parensIf (p > ratioPrec) $
         pprPrec ratioPrec1 (numerator x) <+> char '%' <+> pprPrec ratioPrec1 (denominator x)
+
+addPrec :: Int
+addPrec  = 6  -- Precedence of '+'
+
+instance (RealFloat a, Pretty a) => Pretty (Complex a)  where
+    pprPrec p x =
+        parensIf (p > addPrec) $
+        pprPrec addPrec (realPart x) <+> text ":+" <+> pprPrec addPrec (imagPart x)
 
 instance Pretty Word8 where
     ppr = text . show
