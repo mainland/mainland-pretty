@@ -41,7 +41,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as L
 import Data.Word
-import GHC.Real (Ratio(..))
+import Data.Ratio (Ratio(..), denominator, numerator)
 
 import Text.PrettyPrint.Mainland
 
@@ -93,10 +93,9 @@ ratioPrec  = 7  -- Precedence of ':%' constructor
 ratioPrec1 = ratioPrec + 1
 
 instance (Integral a, Pretty a) => Pretty (Ratio a)  where
-    {-# SPECIALIZE instance Pretty Rational #-}
-    pprPrec p (x:%y) =
+    pprPrec p x =
         parensIf (p > ratioPrec) $
-        pprPrec ratioPrec1 x <+> char '%' <+> pprPrec ratioPrec1 y
+        pprPrec ratioPrec1 (numerator x) <+> char '%' <+> pprPrec ratioPrec1 (denominator x)
 
 instance Pretty Word8 where
     ppr = text . show
