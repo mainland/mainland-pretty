@@ -78,16 +78,16 @@ instance Pretty Char where
     pprList = string
 
 instance Pretty Int where
-    ppr = int
+    pprPrec p x = text (showsPrec p x "")
 
 instance Pretty Integer where
-    ppr = integer
+    pprPrec p x = text (showsPrec p x "")
 
 instance Pretty Float where
-    ppr = float
+    pprPrec p x = text (showsPrec p x "")
 
 instance Pretty Double where
-    ppr = double
+    pprPrec p x = text (showsPrec p x "")
 
 ratioPrec, ratioPrec1 :: Int
 ratioPrec  = 7  -- Precedence of ':%' constructor
@@ -107,28 +107,28 @@ instance (RealFloat a, Pretty a) => Pretty (Complex a)  where
         pprPrec addPrec (realPart x) <+> text ":+" <+> pprPrec addPrec (imagPart x)
 
 instance Pretty Word8 where
-    ppr = text . show
+    pprPrec p x = text (showsPrec p x "")
 
 instance Pretty Word16 where
-    ppr = text . show
+    pprPrec p x = text (showsPrec p x "")
 
 instance Pretty Word32 where
-    ppr = text . show
+    pprPrec p x = text (showsPrec p x "")
 
 instance Pretty Word64 where
-    ppr = text . show
+    pprPrec p x = text (showsPrec p x "")
 
 instance Pretty Int8 where
-    ppr = text . show
+    pprPrec p x = text (showsPrec p x "")
 
 instance Pretty Int16 where
-    ppr = text . show
+    pprPrec p x = text (showsPrec p x "")
 
 instance Pretty Int32 where
-    ppr = text . show
+    pprPrec p x = text (showsPrec p x "")
 
 instance Pretty Int64 where
-    ppr = text . show
+    pprPrec p x = text (showsPrec p x "")
 
 instance Pretty T.Text where
     ppr = strictText
