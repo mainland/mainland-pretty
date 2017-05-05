@@ -25,9 +25,12 @@
 
 module Text.PrettyPrint.Mainland.Class (
     -- * The 'Pretty' type class for pretty printing
-    Pretty(..)
+    Pretty(..),
+
+    pprint
   ) where
 
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Int
 import Data.Loc (L(..),
                  Loc(..),
@@ -41,6 +44,11 @@ import Data.Word
 import GHC.Real (Ratio(..))
 
 import Text.PrettyPrint.Mainland
+
+-- | The 'pprint' function outputs a value of any type that is an instance of
+-- 'Pretty' to the standard output device by calling 'ppr' and adding a newline.
+pprint :: (Pretty a, MonadIO m) => a -> m ()
+pprint = liftIO . putDocLn . ppr
 
 class Pretty a where
 #if __GLASGOW_HASKELL__ >= 708
