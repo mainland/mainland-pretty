@@ -26,6 +26,7 @@ build-type:     Simple
 library
   exposed-modules:
     Text.PrettyPrint.Mainland
+    Text.PrettyPrint.Mainland.Class
 
   build-depends:
     base       >= 4    && < 5,
