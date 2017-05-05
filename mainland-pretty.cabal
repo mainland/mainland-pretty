@@ -29,7 +29,7 @@ library
     Text.PrettyPrint.Mainland.Class
 
   build-depends:
-    base         >= 4    && < 5,
+    base         >= 4.5  && < 5,
     containers   >= 0.2  && < 0.6,
     srcloc       >= 0.2  && < 0.6,
     text         >  0.11 && < 1.3,
