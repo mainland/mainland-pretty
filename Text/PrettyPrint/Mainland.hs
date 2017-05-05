@@ -66,7 +66,7 @@ module Text.PrettyPrint.Mainland (
 
     -- * Document rendering
     render, renderCompact,
-    displayS, prettyS, pretty,
+    displayS, prettyS, pretty, prettyCompactS, prettyCompact,
     displayPragmaS, prettyPragmaS, prettyPragma,
     displayLazyText, prettyLazyText,
     displayPragmaLazyText, prettyPragmaLazyText,
@@ -679,6 +679,14 @@ prettyS w x = displayS (render w x)
 -- | Render and convert a document to a 'String'.
 pretty :: Int -> Doc -> String
 pretty w x = prettyS w x ""
+
+-- | Render and display a document compactly.
+prettyCompactS :: Doc -> ShowS
+prettyCompactS x = displayS (renderCompact x)
+
+-- | Render and convert a document to a 'String' compactly.
+prettyCompact :: Doc -> String
+prettyCompact x = prettyCompactS x ""
 
 -- | Display a rendered document with #line pragmas.
 displayPragmaS :: RDoc -> ShowS
