@@ -136,6 +136,9 @@ instance Pretty T.Text where
 instance Pretty L.Text where
     ppr = lazyText
 
+instance Pretty Doc where
+    ppr doc = doc
+
 instance Pretty Pos where
     ppr p@(Pos _ l c _) =
         text (posFile p) <> colon <> ppr l <> colon <> ppr c
