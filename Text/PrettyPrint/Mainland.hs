@@ -82,11 +82,8 @@ import Data.Loc (L(..),
                  posFile,
                  posLine)
 import qualified Data.Map as Map
-#if MIN_VERSION_base(4,5,0)
-import Data.Monoid (Monoid(..), (<>))
-#else /* !MIN_VERSION_base(4,5,0) */
 import Data.Monoid (Monoid(..))
-#endif /* !MIN_VERSION_base(4,5,0) */
+import Data.Semigroup (Semigroup, (<>))
 import qualified Data.Set as Set
 import Data.String (IsString(..))
 import qualified Data.Text as T
@@ -121,6 +118,9 @@ data Doc -- | The empty document
          | Column  (Int -> Doc)
          -- | Calculate document based on current nesting
          | Nesting (Int -> Doc)
+
+instance Semigroup Doc where
+    (<>) = Cat
 
 instance Monoid Doc where
     mempty  = empty
