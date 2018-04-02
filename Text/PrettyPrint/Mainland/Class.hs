@@ -38,6 +38,12 @@ import Data.Loc (L(..),
                  Pos(..),
                  posFile)
 import qualified Data.Map as Map
+#if !(MIN_VERSION_base(4,9,0))
+import Data.Monoid (Monoid(..), (<>))
+#endif /* !(MIN_VERSION_base(4,9,0)) */
+#if MIN_VERSION_base(4,9,0) && !(MIN_VERSION_base(4,11,0))
+import Data.Semigroup (Semigroup(..))
+#endif
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as L

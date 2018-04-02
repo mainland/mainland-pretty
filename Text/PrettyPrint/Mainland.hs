@@ -41,7 +41,7 @@ module Text.PrettyPrint.Mainland (
     -- ** Basic document combinators
     empty,
     srcloc, line, softline, softbreak,
-    (<>), (<|>), (<+>), (</>), (<+/>), (<//>),
+    (<|>), (<+>), (</>), (<+/>), (<//>),
     group, flatten,
 
     -- ** Wrapping documents in delimiters
