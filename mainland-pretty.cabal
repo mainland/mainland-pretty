@@ -1,11 +1,11 @@
 name:           mainland-pretty
-version:        0.7
+version:        0.7.0.1
 cabal-version:  >= 1.6
 license:        BSD3
 license-file:   LICENSE
 copyright:      (c) 2006-2011 Harvard University
                 (c) 2011-2012 Geoffrey Mainland
-                (c) 2015-2018 Drexel University
+                (c) 2015-2019 Drexel University
 author:         Geoffrey Mainland <mainland@drexel.edu>
 maintainer:     Geoffrey Mainland <mainland@drexel.edu>
 stability:      alpha
