@@ -532,7 +532,11 @@ fillbreak f d = width d $ \w ->
                 else spaces (f - w)
 
 -- | Equivalent of 'fail', but with a document instead of a string.
+#if MIN_VERSION_base(4,13,0)
+faildoc :: MonadFail m => Doc -> m a
+#else
 faildoc :: Monad m => Doc -> m a
+#endif
 faildoc = fail . pretty 80
 
 -- | Equivalent of 'error', but with a document instead of a string.
