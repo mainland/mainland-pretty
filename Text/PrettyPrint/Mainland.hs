@@ -337,7 +337,8 @@ x <|> y = x `Alt` y
 -- | The document @'group' d@ will flatten @d@ to /one/ line if there is
 -- room for it, otherwise the original @d@.
 group :: Doc -> Doc
-group d = flatten d `Alt` d
+group Empty = Empty
+group d     = flatten d `Alt` d
 
 -- | The document @'flatten' d@ will flatten @d@ to /one/ line.
 flatten :: Doc -> Doc
@@ -479,9 +480,10 @@ list = enclosesep lbracket rbracket comma
 -- | The document @'align' d@ renders @d@ with a nesting level set to the current
 -- column.
 align :: Doc -> Doc
-align d = column  $ \k ->
-          nesting $ \i ->
-          nest (k - i) d
+align Empty = Empty
+align d     = column  $ \k ->
+              nesting $ \i ->
+              nest (k - i) d
 
 -- | The document @'hang' i d@ renders @d@ with a nesting level set to the
 -- current column plus @i@, /not including/ the first line.
