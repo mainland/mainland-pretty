@@ -1,4 +1,4 @@
-# The `mainland-pretty` Package  [![Hackage](https://img.shields.io/hackage/v/mainland-pretty.svg)](https://hackage.haskell.org/package/mainland-pretty) [![Build Status](https://travis-ci.org/mainland/mainland-pretty.svg)](https://travis-ci.org/mainland/mainland-pretty)
+# The `mainland-pretty` Package  [![Hackage](https://img.shields.io/hackage/v/mainland-pretty.svg)](https://hackage.haskell.org/package/mainland-pretty) [![Actions Status: haskell-ci](https://github.com/mainland/mainland-pretty/actions/workflows/haskell-ci.yml/badge.svg)](https://github.com/mainland/mainland-pretty/actions?query=workflow%3Ahaskell-ci)
 
 Pretty printing designed for printing source code based on Wadler's paper *A
 Prettier Printer*. The main advantage of this library are:
