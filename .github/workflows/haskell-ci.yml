@@ -8,15 +8,16 @@
 #
 # For more information, see https://github.com/haskell-CI/haskell-ci
 #
-# version: 0.19.20250917
+# version: 0.19.20260331
 #
-# REGENDATA ("0.19.20250917",["github","mainland-pretty.cabal"])
+# REGENDATA ("0.19.20260331",["github","mainland-pretty.cabal"])
 #
 name: Haskell-CI
 on:
   - push
   - pull_request
   - merge_group
+  - workflow_dispatch
 jobs:
   linux:
     name: Haskell-CI - Linux - ${{ matrix.compiler }}
@@ -29,24 +30,29 @@ jobs:
     strategy:
       matrix:
         include:
-          - compiler: ghc-9.12.2
+          - compiler: ghc-9.14.1
             compilerKind: ghc
-            compilerVersion: 9.12.2
+            compilerVersion: 9.14.1
             setup-method: ghcup
             allow-failure: false
-          - compiler: ghc-9.10.1
+          - compiler: ghc-9.12.4
             compilerKind: ghc
-            compilerVersion: 9.10.1
+            compilerVersion: 9.12.4
             setup-method: ghcup
             allow-failure: false
-          - compiler: ghc-9.8.2
+          - compiler: ghc-9.10.3
             compilerKind: ghc
-            compilerVersion: 9.8.2
+            compilerVersion: 9.10.3
             setup-method: ghcup
             allow-failure: false
-          - compiler: ghc-9.6.4
+          - compiler: ghc-9.8.4
             compilerKind: ghc
-            compilerVersion: 9.6.4
+            compilerVersion: 9.8.4
+            setup-method: ghcup
+            allow-failure: false
+          - compiler: ghc-9.6.7
+            compilerKind: ghc
+            compilerVersion: 9.6.7
             setup-method: ghcup
             allow-failure: false
           - compiler: ghc-9.4.8
@@ -54,9 +60,9 @@ jobs:
             compilerVersion: 9.4.8
             setup-method: ghcup
             allow-failure: false
-          - compiler: ghc-9.2.2
+          - compiler: ghc-9.2.8
             compilerKind: ghc
-            compilerVersion: 9.2.2
+            compilerVersion: 9.2.8
             setup-method: ghcup
             allow-failure: false
           - compiler: ghc-9.0.2
