@@ -567,7 +567,11 @@ best !pageWidth initialColumn doc = be True Nothing Nothing initialColumn id (Co
     be _  _ _  !_  f Nil           = f REmpty
     be nl p p' !k  f (Cons i d ds) =
         case d of
+          -- Empty fragments must not emit or consume source annotations.
           Empty      -> be nl    p p' k f ds
+          String 0 _ -> be nl p p' k f ds
+          Text s | T.null s -> be nl p p' k f ds
+          LazyText s | L.null s -> be nl p p' k f ds
           Char c     -> be False p p' (k+1) (f . prag . RChar c) ds
           String l s -> be False p p' (k+l) (f . prag . RString l s) ds
           Text s     -> be False p p' (k+T.length s) (f . prag . RText s) ds
