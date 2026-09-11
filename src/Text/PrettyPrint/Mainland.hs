@@ -22,7 +22,7 @@
 -- 'Data.Text.Lazy.Text' for output.
 
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP          #-}
 
 module Text.PrettyPrint.Mainland (
     -- * The document type
@@ -75,26 +75,22 @@ module Text.PrettyPrint.Mainland (
     putDoc, putDocLn, hPutDoc, hPutDocLn
   ) where
 
-import Data.Loc (L(..),
-                 Loc(..),
-                 Located(..),
-                 Pos(..),
-                 posFile,
-                 posLine)
-import qualified Data.Map as Map
+import           Data.Loc               (L (..), Loc (..), Located (..),
+                                         Pos (..), posFile, posLine)
+import qualified Data.Map               as Map
 #if !(MIN_VERSION_base(4,9,0))
-import Data.Monoid (Monoid(..), (<>))
+import           Data.Monoid            (Monoid (..), (<>))
 #endif /* !(MIN_VERSION_base(4,9,0)) */
 #if MIN_VERSION_base(4,9,0) && !(MIN_VERSION_base(4,11,0))
-import Data.Semigroup (Semigroup(..))
+import           Data.Semigroup         (Semigroup (..))
 #endif
-import qualified Data.Set as Set
-import Data.String (IsString(..))
-import qualified Data.Text as T
-import qualified Data.Text.Lazy.IO as TIO
-import qualified Data.Text.Lazy as L
+import qualified Data.Set               as Set
+import           Data.String            (IsString (..))
+import qualified Data.Text              as T
+import qualified Data.Text.Lazy         as L
 import qualified Data.Text.Lazy.Builder as B
-import System.IO (Handle)
+import qualified Data.Text.Lazy.IO      as TIO
+import           System.IO              (Handle)
 
 -- | The abstract type of documents.
 data Doc -- | The empty document
@@ -463,9 +459,9 @@ semisep = align . sep . punctuate semi
 enclosesep :: Doc -> Doc -> Doc -> [Doc] -> Doc
 enclosesep left right p ds =
     case ds of
-      [] ->  left <> right
+      []  ->  left <> right
       [d] -> left <> d <> right
-      _ ->   left <> align (sep (punctuate p ds)) <> right
+      _   ->   left <> align (sep (punctuate p ds)) <> right
 
 -- | The document @'tuple' ds@ separates @ds@ with commas and encloses them with
 -- parentheses.
@@ -660,18 +656,18 @@ renderCompact doc = scan 0 [doc]
     scan !_ []     = REmpty
     scan !k (d:ds) =
         case d of
-          Empty       -> scan k ds
-          Char c      -> RChar c (scan (k+1) ds)
-          String l s  -> RString l s (scan (k+l) ds)
-          Text s      -> RText s (scan (k+T.length s) ds)
-          LazyText s  -> RLazyText s (scan (k+fromIntegral (L.length s)) ds)
-          Line        -> RLine 0 (scan 0 ds)
-          Nest _ x    -> scan k (x:ds)
-          SrcLoc _    -> scan k ds
-          Cat x y     -> scan k (x:y:ds)
-          Alt x _     -> scan k (x:ds)
-          Column f    -> scan k (f k:ds)
-          Nesting f   -> scan k (f 0:ds)
+          Empty      -> scan k ds
+          Char c     -> RChar c (scan (k+1) ds)
+          String l s -> RString l s (scan (k+l) ds)
+          Text s     -> RText s (scan (k+T.length s) ds)
+          LazyText s -> RLazyText s (scan (k+fromIntegral (L.length s)) ds)
+          Line       -> RLine 0 (scan 0 ds)
+          Nest _ x   -> scan k (x:ds)
+          SrcLoc _   -> scan k ds
+          Cat x y    -> scan k (x:y:ds)
+          Alt x _    -> scan k (x:ds)
+          Column f   -> scan k (f k:ds)
+          Nesting f  -> scan k (f 0:ds)
 
 -- | Display a rendered document.
 displayS :: RDoc -> ShowS
