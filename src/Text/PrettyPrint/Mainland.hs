@@ -75,16 +75,11 @@ module Text.PrettyPrint.Mainland (
     putDoc, putDocLn, hPutDoc, hPutDocLn
   ) where
 
-import           Data.Loc               (L (..), Loc (..), Located (..),
-                                         Pos (..), posFile, posLine)
-import qualified Data.Map               as Map
-#if !(MIN_VERSION_base(4,9,0))
-import           Data.Monoid            (Monoid (..), (<>))
-#endif /* !(MIN_VERSION_base(4,9,0)) */
-#if MIN_VERSION_base(4,9,0) && !(MIN_VERSION_base(4,11,0))
+import           Data.Loc               (Loc (..), Located (..), Pos (..),
+                                         posFile, posLine)
+#if !MIN_VERSION_base(4,11,0)
 import           Data.Semigroup         (Semigroup (..))
 #endif
-import qualified Data.Set               as Set
 import           Data.String            (IsString (..))
 import qualified Data.Text              as T
 import qualified Data.Text.Lazy         as L
@@ -119,14 +114,12 @@ data Doc -- | The empty document
          -- | Calculate document based on current nesting
          | Nesting (Int -> Doc)
 
-#if MIN_VERSION_base(4,9,0)
 instance Semigroup Doc where
     (<>) = Cat
-#endif
 
 instance Monoid Doc where
     mempty  = empty
-#if !(MIN_VERSION_base(4,11,0))
+#if !MIN_VERSION_base(4,11,0)
     mappend = Cat
 #endif
 
@@ -288,18 +281,9 @@ softline = space `Alt` line
 softbreak :: Doc
 softbreak = empty `Alt` line
 
-#if !MIN_VERSION_base(4,5,0)
-infixr 6 <>
-#endif /* !MIN_VERSION_base(4,5,0) */
 infixr 6 <+>
 infixr 5 </>, <+/>, <//>
 infixl 3 <|>
-
-#if !MIN_VERSION_base(4,5,0)
--- | Concatenates two documents.
-(<>) :: Doc -> Doc -> Doc
-x <> y = x `Cat` y
-#endif /* !MIN_VERSION_base(4,5,0) */
 
 -- | Concatenates two documents with a 'space' in between, with identity
 -- 'empty'.
@@ -571,7 +555,7 @@ data Docs -- | No document.
           | Cons {-# UNPACK #-} !Int Doc Docs
 
 best :: Int -> Int -> Doc -> RDoc
-best !w k x = be True Nothing Nothing k id (Cons 0 x Nil)
+best !pageWidth initialColumn doc = be True Nothing Nothing initialColumn id (Cons 0 doc Nil)
   where
     be :: Bool      -- ^ Did a newline just occur?
        -> Maybe Pos -- ^ Previous source position
@@ -609,7 +593,7 @@ best !w k x = be True Nothing Nothing k id (Cons 0 x Nil)
                 -> (Maybe Pos, RDocS) -- ^ Current source position and position
                                       -- pragma
         lineLoc Nothing   Nothing       = (Nothing, noPragma)
-        lineLoc Nothing   (Just p)      = (Just p, pragma p)
+        lineLoc Nothing   (Just pos)    = (Just pos, pragma pos)
         lineLoc (Just p1) (Just p2)
             | posFile p2 == posFile p1 &&
               posLine p2 == posLine p1 + 1 = (Just p2, noPragma)
@@ -617,19 +601,19 @@ best !w k x = be True Nothing Nothing k id (Cons 0 x Nil)
         lineLoc (Just p1) Nothing       = (Just (advance p1), noPragma)
           where
             advance :: Pos -> Pos
-            advance (Pos f l c coff) = Pos f (l+1) c coff
+            advance (Pos file l c coff) = Pos file (l+1) c coff
 
         noPragma :: RDocS
         noPragma = id
 
         -- We only insert a pragma if a newline was just output.
         pragma :: Pos -> RDocS
-        pragma p | nl        = RPos p
-                 | otherwise = id
+        pragma pos | nl        = RPos pos
+                   | otherwise = id
 
     better :: Int -> RDocS -> RDoc -> RDoc -> RDoc
-    better !k f x y | fits (w - k) x = f x
-                    | otherwise      = f y
+    better !k f x y | fits (pageWidth - k) x = f x
+                    | otherwise              = f y
 
     fits :: Int -> RDoc -> Bool
     fits  !w  _        | w < 0 = False
