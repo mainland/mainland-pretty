@@ -169,6 +169,30 @@ layoutTests = testGroup "layout and combinators"
 locationTests :: TestTree
 locationTests = testGroup "source locations"
     [ pragmaCase "initial annotation" 80 (at 10 <> text "x") "#line 10 \"f.c\"\nx"
+    , testGroup "empty text fragments"
+        [ testGroup name
+            [ pragmaCase "before an initial annotation" 80
+                (fragment <> at 10 <> text "x") "#line 10 \"f.c\"\nx"
+            , pragmaCase "do not emit a pending annotation prematurely" 80
+                (at 10 <> fragment <> at 20 <> text "x" </> at 21 <> text "y")
+                "#line 20 \"f.c\"\nx\ny"
+            , pragmaCase "preserve directives before automatic indentation" 1
+                (nest 2 (group (at 10 <> text "x" <> line <>
+                    fragment <> at 20 <> text "y")))
+                "#line 10 \"f.c\"\nx\n#line 20 \"f.c\"\n  y"
+            , pragmaCase "without visible content emit no directive" 80
+                (at 10 <> fragment) ""
+            , testCase "render retains only the annotation for visible content" $
+                positions (render 80 (at 10 <> fragment <> at 20 <> text "x"))
+                    @?= [linePos "f.c" 20]
+            , testCase "separator operators still insert their separators" $
+                forM_ [((<+>), " "), ((</>), "\n"), ((<+/>), " ")] $ \(op, sepText) -> do
+                    pretty 80 (op fragment (text "x")) @?= sepText ++ "x"
+                    pretty 80 (op (text "x") fragment) @?= "x" ++ sepText
+            ]
+        | (name, fragment) <- [("String", text ""),
+            ("strict Text", strictText T.empty), ("lazy Text", lazyText LT.empty)]
+        ]
     , pragmaCase "documented example works across srcloc versions" 80
         (srcloc (linePos "filename" 3) <> stack (map text ["foo", "bar", "baz"]))
         "#line 3 \"filename\"\nfoo\nbar\nbaz"
