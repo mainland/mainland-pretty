@@ -30,27 +30,24 @@ module Text.PrettyPrint.Mainland.Class (
     pprint
   ) where
 
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Complex (Complex, realPart, imagPart)
-import Data.Int
-import Data.Loc (L(..),
-                 Loc(..),
-                 Pos(..),
-                 posFile)
-import qualified Data.Map as Map
+import           Control.Monad.IO.Class    (MonadIO, liftIO)
+import           Data.Complex              (Complex, imagPart, realPart)
+import           Data.Int
+import           Data.Loc                  (L (..), Loc (..), Pos (..), posFile)
+import qualified Data.Map                  as Map
 #if !(MIN_VERSION_base(4,9,0))
-import Data.Monoid (Monoid(..), (<>))
+import           Data.Monoid               (Monoid (..), (<>))
 #endif /* !(MIN_VERSION_base(4,9,0)) */
 #if MIN_VERSION_base(4,9,0) && !(MIN_VERSION_base(4,11,0))
-import Data.Semigroup (Semigroup(..))
+import           Data.Semigroup            (Semigroup (..))
 #endif
-import qualified Data.Set as Set
-import qualified Data.Text as T
-import qualified Data.Text.Lazy as L
-import Data.Word
-import Data.Ratio (Ratio(..), denominator, numerator)
+import           Data.Ratio                (Ratio (..), denominator, numerator)
+import qualified Data.Set                  as Set
+import qualified Data.Text                 as T
+import qualified Data.Text.Lazy            as L
+import           Data.Word
 
-import Text.PrettyPrint.Mainland
+import           Text.PrettyPrint.Mainland
 
 -- | The 'pprint' function outputs a value of any type that is an instance of
 -- 'Pretty' to the standard output device by calling 'ppr' and adding a newline.
