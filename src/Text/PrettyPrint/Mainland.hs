@@ -718,14 +718,17 @@ prettyPragmaS w x = displayPragmaS (render w x)
 
 -- | Render and convert a document to a 'String' with #line pragmas.
 --
--- > > let loc = Loc (Pos "filename" 3 5 7) (Pos "filename" 5 7 9)
--- > > in  putStrLn $ prettyPragma 80 $ srcloc loc <> text "foo" </> text "bar" </> text "baz"
+-- > import Data.Loc (linePos)
+-- >
+-- > let loc = linePos "filename" 3
+-- >     doc = srcloc loc <> stack (map text ["foo", "bar", "baz"])
+-- > in putStrLn (prettyPragma 80 doc)
 --
 -- will be printed as
 --
 -- @
--- foo
 -- #line 3 "filename"
+-- foo
 -- bar
 -- baz
 -- @

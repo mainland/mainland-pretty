@@ -9,8 +9,8 @@ import           Data.Char                       (chr)
 import           Data.Complex                    (Complex ((:+)))
 import           Data.Int                        (Int16, Int32, Int64, Int8)
 import           Data.List                       (isInfixOf)
-import           Data.Loc                        (L (..), Loc (..), Pos,
-                                                  advancePos, linePos)
+import           Data.Loc                        (L (..), Loc (..), Pos (..),
+                                                  advancePos, linePos, posCoff)
 import qualified Data.Map                        as Map
 import           Data.Ratio                      ((%))
 #if !MIN_VERSION_base(4,11,0)
@@ -169,6 +169,18 @@ layoutTests = testGroup "layout and combinators"
 locationTests :: TestTree
 locationTests = testGroup "source locations"
     [ pragmaCase "initial annotation" 80 (at 10 <> text "x") "#line 10 \"f.c\"\nx"
+    , pragmaCase "documented example works across srcloc versions" 80
+        (srcloc (linePos "filename" 3) <> stack (map text ["foo", "bar", "baz"]))
+        "#line 3 \"filename\"\nfoo\nbar\nbaz"
+    , testCase "render preserves offsets in explicit annotations" $
+        forM_ offsetPositions $ \p ->
+            map posCoff (positions (render 80 (srcloc p <> text "x"))) @?= [posCoff p]
+    , testCase "offsets do not affect printed positions or directives" $
+        forM_ offsetPositions $ \p -> do
+            pretty 80 (ppr p) @?= "f.c:3:5"
+            prettyPragma 80 (srcloc p <> text "x") @?= "#line 3 \"f.c\"\nx"
+            LT.unpack (prettyPragmaLazyText 80 (srcloc p <> text "x"))
+                @?= "#line 3 \"f.c\"\nx"
     , pragmaCase "consecutive source lines need only the initial directive" 80
         (at 10 <> text "x" </> at 11 <> text "y") "#line 10 \"f.c\"\nx\ny"
     , pragmaCase "unannotated lines advance the mapping" 80
@@ -209,6 +221,16 @@ locationTests = testGroup "source locations"
     ]
   where
     at = srcloc . linePos "f.c"
+
+-- srcloc 0.7 makes offsets optional and ignores them in Pos equality.
+-- Check offsets explicitly so a lost known offset cannot pass unnoticed.
+offsetPositions :: [Pos]
+offsetPositions = map (Pos "f.c" 3 5)
+#if MIN_VERSION_srcloc(0,7,0)
+    [Nothing, Just 0, Just 42]
+#else
+    [0, 42]
+#endif
 
 pragmaCase :: String -> Int -> Doc -> String -> TestTree
 pragmaCase name columns d expected = testCase name $ do

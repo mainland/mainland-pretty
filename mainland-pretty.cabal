@@ -52,7 +52,7 @@ library
   build-depends:
     base         >= 4.9  && < 5,
     containers   >= 0.2  && < 0.9,
-    srcloc       >= 0.2  && < 0.7,
+    srcloc       >= 0.2  && < 0.8,
     text         >= 0.11 && < 2.2
 
 test-suite mainland-pretty-tests
@@ -65,7 +65,7 @@ test-suite mainland-pretty-tests
     containers       >= 0.2  && < 0.9,
     directory        >= 1.2  && < 1.4,
     mainland-pretty,
-    srcloc           >= 0.2  && < 0.7,
+    srcloc           >= 0.2  && < 0.8,
     tasty            >= 1.4  && < 1.6,
     tasty-hunit      >= 0.10 && < 0.11,
     tasty-quickcheck >= 0.10 && < 0.12,
