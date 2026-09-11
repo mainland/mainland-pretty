@@ -35,13 +35,10 @@ import           Data.Complex              (Complex, imagPart, realPart)
 import           Data.Int
 import           Data.Loc                  (L (..), Loc (..), Pos (..), posFile)
 import qualified Data.Map                  as Map
-#if !(MIN_VERSION_base(4,9,0))
-import           Data.Monoid               (Monoid (..), (<>))
-#endif /* !(MIN_VERSION_base(4,9,0)) */
-#if MIN_VERSION_base(4,9,0) && !(MIN_VERSION_base(4,11,0))
-import           Data.Semigroup            (Semigroup (..))
+#if !MIN_VERSION_base(4,11,0)
+import           Data.Semigroup            ((<>))
 #endif
-import           Data.Ratio                (Ratio (..), denominator, numerator)
+import           Data.Ratio                (Ratio, denominator, numerator)
 import qualified Data.Set                  as Set
 import qualified Data.Text                 as T
 import qualified Data.Text.Lazy            as L
@@ -55,9 +52,7 @@ pprint :: (Pretty a, MonadIO m) => a -> m ()
 pprint = liftIO . putDocLn . ppr
 
 class Pretty a where
-#if __GLASGOW_HASKELL__ >= 708
     {-# MINIMAL pprPrec | ppr #-}
-#endif
     ppr     :: a -> Doc
     pprPrec :: Int -> a -> Doc
     pprList :: [a] -> Doc
@@ -149,8 +144,8 @@ instance Pretty Pos where
 instance Pretty Loc where
     ppr NoLoc = text "<no location info>"
 
-    ppr (Loc p1@(Pos f1 l1 c1 _) p2@(Pos f2 l2 c2 _))
-        | f1 == f2   = text (posFile p1) <> colon <//> pprLineCol l1 c1 l2 c2
+    ppr (Loc p1@(Pos f1 startLine startCol _) p2@(Pos f2 endLine endCol _))
+        | f1 == f2   = text (posFile p1) <> colon <//> pprLineCol startLine startCol endLine endCol
         | otherwise  = ppr p1 <> text "-" <> ppr p2
       where
         pprLineCol :: Int -> Int -> Int -> Int -> Doc
