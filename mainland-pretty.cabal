@@ -54,6 +54,25 @@ library
     srcloc       >= 0.2  && < 0.7,
     text         >= 0.11 && < 2.2
 
+test-suite mainland-pretty-tests
+  type: exitcode-stdio-1.0
+  hs-source-dirs: tests
+  main-is: Main.hs
+
+  build-depends:
+    base             >= 4.9  && < 5,
+    containers       >= 0.2  && < 0.9,
+    directory        >= 1.2  && < 1.4,
+    mainland-pretty,
+    srcloc           >= 0.2  && < 0.7,
+    tasty            >= 1.4  && < 1.6,
+    tasty-hunit      >= 0.10 && < 0.11,
+    tasty-quickcheck >= 0.10 && < 0.12,
+    text             >= 0.11 && < 2.2
+
+  default-language: Haskell2010
+  ghc-options: -Wall
+
 source-repository head
   type:     git
   location: https://github.com/mainland/mainland-pretty.git
