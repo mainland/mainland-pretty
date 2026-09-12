@@ -8,7 +8,7 @@ import           Control.Monad                   (forM_)
 import           Data.Char                       (chr)
 import           Data.Complex                    (Complex ((:+)))
 import           Data.Int                        (Int16, Int32, Int64, Int8)
-import           Data.List                       (isInfixOf)
+import           Data.List                       (intercalate, isInfixOf)
 import           Data.Loc                        (L (..), Loc (..), Pos (..),
                                                   advancePos, linePos, posCoff,
                                                   posFile)
@@ -46,7 +46,7 @@ import           Text.PrettyPrint.Mainland.Class
 
 main :: IO ()
 main = defaultMain $ testGroup "mainland-pretty"
-    [ primitiveTests, multilineTextTests, layoutTests, prefixTests, largeListTests, locationTests, filenameTests, classTests, outputTests
+    [ primitiveTests, multilineTextTests, layoutTests, hardlineTests, prefixTests, largeListTests, locationTests, filenameTests, classTests, outputTests
     , localOption (QuickCheckTests 1000) $
       localOption (QuickCheckMaxSize 30) propertyTests
     ]
@@ -153,7 +153,7 @@ layoutTests = testGroup "layout and combinators"
         (group (char 'a' </> char 'b')) "a\nb"
     , renderCase "negative width chooses the broken layout" (-1)
         (group (char 'a' </> char 'b')) "a\nb"
-    , renderCase "flatten replaces hard lines with spaces" 1
+    , renderCase "flatten replaces ordinary lines with spaces" 1
         (flatten (char 'a' </> char 'b')) "a b"
     , renderCase "softline can break independently" 7
         (text "foo" <+/> text "bar" <+/> text "baz") "foo bar\nbaz"
@@ -246,7 +246,7 @@ layoutTests = testGroup "layout and combinators"
     , renderCase "fillbreak breaks and nests longer documents" 80
         (fillbreak 2 (text "abc") <> char 'x') "abc\n  x"
     , testGroup "documented contracts"
-        [ renderCase "README example" 12
+        [ renderCase "list layout example" 12
             (list (map text ["alpha", "beta", "gamma"])) "[alpha,\n beta,\n gamma]"
         , renderCase "enclosesep example" 15
             (enclosesep lparen rparen comma (map text (words "The quick brown fox jumps over the lazy dog")))
@@ -270,6 +270,110 @@ layoutTests = testGroup "layout and combinators"
   where
     abc = map char "abc"
     multiline = char 'a' </> char 'b'
+
+hardlineTests :: TestTree
+hardlineTests = testGroup "mandatory line breaks"
+    [ testGroup "breaks survive grouping and flattening"
+        [ renderCase (name ++ " " ++ form ++ " at width " ++ show w) w (wrap d) expected
+        | (name, d, expected) <-
+            [("lone", hardline, "\n"),
+             ("leading", hardline <> text "a", "\na"),
+             ("trailing", text "a" <> hardline, "a\n"),
+             ("blank", text "a" <> hardline <> hardline <> text "b", "a\n\nb")]
+        , (form, wrap) <- [("plain", id), ("group", group),
+                           ("nested group", group . group), ("flatten", flatten),
+                           ("flatten group", flatten . group)]
+        , w <- [-1, 0, 1, 80]
+        ]
+    , renderCase "an outer mandatory break leaves inner groups width sensitive" 1
+        (group (text "a" <> hardline <> group (text "b" </> text "c"))) "a\nb\nc"
+    , renderCase "inner groups can fit despite an outer mandatory break" 3
+        (group (text "a" <> hardline <> group (text "b" </> text "c"))) "a\nb c"
+    , renderCase "a mandatory break rejects flattening the whole group" 80
+        (group (text "a" </> text "b" <> hardline <> text "c")) "a\nb\nc"
+    , renderCase "explicit flatten still converts ordinary lines" 0
+        (flatten (group (text "a" </> text "b" <> hardline <> text "c"))) "a b\nc"
+    , renderCase "a break after a group does not prevent its flattening" 3
+        (group (text "a" </> text "b") <> hardline <> text "c") "a b\nc"
+    , renderCase "following text before a mandatory break still affects fitting" 3
+        (group (text "a" </> text "b") <> text "x" <> hardline) "a\nbx\n"
+    , renderCase "ordinary alternatives may contain mandatory breaks" 1
+        ((text "a" <+> text "b" <> hardline <> text "c") <|>
+         (text "a" </> text "b" <> hardline <> text "c")) "a\nb\nc"
+    , renderCase "mandatory breaks produced by column reject the flat trial" 80
+        (group (text "ab" <> line <> column (\k -> if k == 3 then hardline else text "c")))
+        "ab\nc"
+    , renderCase "mandatory breaks produced by nesting preserve prefixes" 80
+        (prefixLines "-- " (group (text "a" <>
+            nesting (\n -> if n == 3 then hardline else empty) <> text "b"))) "-- a\n-- b"
+    , testGroup "indentation and queries"
+        [ renderCase (show n) 80
+            (group (nest n (text "a" <> hardline <> column int <> colon <> nesting int)))
+            ("a\n" ++ replicate n ' ' ++ show n ++ ":" ++ show n)
+        | n <- [-2, 0, 2]]
+    , renderCase "alignment applies after mandatory breaks" 80
+        (text "xx" <> align (group (text "a" <> hardline <> text "b"))) "xxa\n  b"
+    , testGroup "comments stay terminated inside nested groups"
+        [ renderCase (form ++ " at width " ++ show w) w (wrap (comment <> hardline <> text "code")) expected
+        | (form, wrap) <- [("group", group), ("nested group", group . group)]
+        , (w, expected) <- [(12, "-- alpha\n-- beta\ncode"), (13, "-- alpha beta\ncode"),
+                            (80, "-- alpha beta\ncode")]]
+    , renderCase "a break inside a prefix scope leaves no dangling prefix" 80
+        (group (prefixLines "-- " (text "a" <> hardline) <> text "code")) "-- a\ncode"
+    , renderCase "blank prefixed lines retain their markers" 80
+        (group (prefixLines "-- " (hardline <> text "a" <> hardline <> hardline)))
+        "-- \n-- a\n-- \n"
+    , renderCase "nested prefix scopes restore after a mandatory break" 80
+        (group (prefixLines "> " (prefixLines "-- " (text "a" <> hardline) <> text "b")))
+        "> -- a\n> b"
+    , pragmaCase "mandatory breaks advance source mappings" 80
+        (group (srcloc (linePos "f.c" 4) <> text "a" <> hardline <>
+                srcloc (linePos "f.c" 5) <> text "b")) "#line 4 \"f.c\"\na\nb"
+    , pragmaCase "directives precede indentation and prefixes after a mandatory break" 80
+        (group (nest 2 (prefixLines "-- " (srcloc (linePos "f.c" 4) <> text "a" <>
+            hardline <> srcloc (linePos "g.c" 8) <> text "b"))))
+        "#line 4 \"f.c\"\n-- a\n#line 8 \"g.c\"\n  -- b"
+    , pragmaCase "annotations on mandatory blank lines are retained" 80
+        (group (srcloc (linePos "f.c" 4) <> hardline <>
+                srcloc (linePos "f.c" 5) <> text "a")) "#line 4 \"f.c\"\n\na"
+    , testCase "failed flat trials do not leak source annotations" $
+        positions (render 80 (group (text "a" </> srcloc (linePos "f.c" 8) <>
+            text "b" <> hardline <> srcloc (linePos "g.c" 9) <> text "c"))) @?=
+            [linePos "f.c" 8, linePos "g.c" 9]
+    , testGroup "compact rendering"
+        [ testCase name $ do
+            prettyCompact d @?= expected
+            prettyCompactS d "suffix" @?= expected ++ "suffix"
+            LT.unpack (displayLazyText (renderCompact d)) @?= expected
+        | (name, d, expected) <-
+            [("plain", nest 2 (text "a" <> hardline <> text "b"), "a\nb"),
+             ("group", group (text "a" </> text "b" <> hardline <> text "c"), "a\nb\nc"),
+             ("inner group", group (text "a" <> hardline <> group (text "b" </> text "c")), "a\nb c"),
+             ("explicit flatten", flatten (text "a" </> text "b" <> hardline <> text "c"), "a b\nc"),
+             ("comment", group (comment <> hardline <> text "code"), "-- alpha beta\ncode"),
+             ("blank prefixes", group (prefixLines "-- " (hardline <> hardline)), "-- \n-- \n"),
+             ("queries", group (prefixLines "> " (nest 4 (hardline <> column int <> colon <> nesting int))), "> \n> 2:2"),
+             ("annotations", group (srcloc (linePos "f.c" 8) <> hardline <> text "a"), "\na")]]
+    , testGroup "laziness"
+        [ testCase name $ take 1 (renderDoc (group (hardline <> error "tail forced"))) @?= "\n"
+        | (name, renderDoc) <- [("width-sensitive", pretty 80), ("compact", prettyCompact)]]
+    , testCase "compact flat trials stop at the group boundary" $
+        take 1 (prettyCompact (group (text "a") <> error "following document forced")) @?= "a"
+    , testCase "a group at negative remaining width does not inspect its flat form" $
+        take 4 (pretty (-1) (group (text "abc" <> line <> error "tail forced"))) @?= "abc\n"
+    , testCase "compact ungrouped output remains incremental" $
+        take 2 (prettyCompact (text "a" <> hardline <> error "tail forced")) @?= "a\n"
+    , testCase "large compact flat trials use bounded stack" $ do
+        let d = sep (replicate 100000 (text "x"))
+        LT.length (displayLazyText (renderCompact d)) @?= 199999
+        LT.length (displayLazyText (renderCompact (group (d <> hardline)))) @?= 200000
+    , testCase "many mandatory breaks render with a 1 MiB stack limit" $ do
+        let d = group (prefixLines "-- " (mconcat (replicate 100000 (text "x" <> hardline))))
+        LT.length (prettyLazyText 80 d) @?= 500000
+        LT.length (displayLazyText (renderCompact d)) @?= 500000
+    ]
+  where
+    comment = prefixLines "-- " (sep (map text ["alpha", "beta"]))
 
 prefixTests :: TestTree
 prefixTests = testGroup "line prefixes"
@@ -369,7 +473,7 @@ prefixTests = testGroup "line prefixes"
             prettyCompactS d "suffix" @?= expected ++ "suffix"
             LT.unpack (displayLazyText (renderCompact d)) @?= expected
         | (name, d, expected) <-
-            [("hard lines", nest 2 (prefixLines "-- " multiline), "-- a\n-- b"),
+            [("ordinary lines", nest 2 (prefixLines "-- " multiline), "-- a\n-- b"),
              ("alternatives", comment, "-- alpha beta"),
              ("queries", prefixLines "-- " (column int </> nesting int), "-- 3\n-- 3"),
              ("empty scope", prefixLines "-- " (text "" <> strictText T.empty <> lazyText LT.empty), ""),
@@ -716,6 +820,14 @@ propertyTests = testGroup "generated rendering properties"
         prettyS w (document text tree) suffix === pretty w (document text tree) ++ suffix
     , testProperty "pragma ShowS preserves arbitrary suffixes" $ \tree suffix -> withWidth $ \w ->
         prettyPragmaS w (document text tree) suffix === prettyPragma w (document text tree) ++ suffix
+    , testProperty "mandatory separators let groups choose layouts independently" $ \parts -> withWidth $ \w ->
+        let strings = [s | ScalarText s <- parts]
+            ds = map (group . string . map (\c -> if c == ' ' then '\n' else c)) strings
+            combined = group (case ds of
+                [] -> empty
+                _  -> foldr1 (\a b -> a <> hardline <> b) ds)
+        in (pretty w combined, prettyCompact combined) ===
+           (intercalate "\n" (map (pretty w) ds), intercalate "\n" (map prettyCompact ds))
     , testProperty "flatten is idempotent" $ \tree -> withWidth $ \w ->
         let d = document text tree in prettyPragma w (flatten (flatten d)) === prettyPragma w (flatten d)
     , testProperty "group is idempotent" $ \tree -> withWidth $ \w ->
@@ -775,8 +887,8 @@ instance Arbitrary ScalarText where
 
 -- This syntax tree makes counterexamples printable and shrinkable. Alternatives
 -- come from public group/soft-break combinators, never unrelated content.
-data Document = Literal ScalarText | HardLine | SoftLine | SoftBreak
-              | Annotation Int | Append Document Document | Group Document
+data Document = Literal ScalarText | LineBreak | HardLine | SoftLine | SoftBreak
+              | Annotation Int | Append Document Document | Group Document | Flatten Document
               | Nest Int Document | Align Document | Column | Nesting
               | Collection [Document] | Prefixed ScalarText Document
     deriving Show
@@ -786,11 +898,12 @@ instance Arbitrary Document where
       where
         generate n = frequency $
             [(4, Literal <$> resize 8 arbitrary),
-             (1, elements [HardLine, SoftLine, SoftBreak, Column, Nesting]),
+             (1, elements [LineBreak, HardLine, SoftLine, SoftBreak, Column, Nesting]),
              (1, Annotation <$> choose (1, 20))] ++
             if n <= 0 then [] else
             [(3, Append <$> generate (n `div` 2) <*> generate (n `div` 2)),
              (2, Group <$> generate (n - 1)),
+             (1, Flatten <$> generate (n - 1)),
              (1, Nest <$> choose (0, 5) <*> generate (n - 1)),
              (1, Align <$> generate (n - 1)),
              (2, Prefixed <$> resize 4 arbitrary <*> generate (n - 1)),
@@ -799,6 +912,7 @@ instance Arbitrary Document where
     shrink (Literal s)     = map Literal (shrink s)
     shrink (Append a b)    = [a, b] ++ [Append x b | x <- shrink a] ++ [Append a y | y <- shrink b]
     shrink (Group d)       = d : map Group (shrink d)
+    shrink (Flatten d)     = d : map Flatten (shrink d)
     shrink (Nest n d)      = d : [Nest m d | m <- shrink n, m >= 0] ++ map (Nest n) (shrink d)
     shrink (Align d)       = d : map Align (shrink d)
     shrink (Prefixed s d)  = d : [Prefixed t d | t <- shrink s] ++ map (Prefixed s) (shrink d)
@@ -808,12 +922,14 @@ instance Arbitrary Document where
 document :: (String -> Doc) -> Document -> Doc
 document atom tree = case tree of
     Literal (ScalarText s)    -> atom s
-    HardLine                  -> line
+    LineBreak                 -> line
+    HardLine                  -> hardline
     SoftLine                  -> softline
     SoftBreak                 -> softbreak
     Annotation n              -> srcloc (linePos "f.c" n)
     Append a b                -> document atom a <> document atom b
     Group d                   -> group (document atom d)
+    Flatten d                 -> flatten (document atom d)
     Nest n d                  -> nest n (document atom d)
     Align d                   -> align (document atom d)
     Column                    -> column int

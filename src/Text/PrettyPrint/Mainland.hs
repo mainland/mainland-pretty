@@ -39,7 +39,7 @@ module Text.PrettyPrint.Mainland (
 
     -- ** Basic document combinators
     empty,
-    srcloc, line, softline, softbreak,
+    srcloc, line, hardline, softline, softbreak,
     (<|>), (<+>), (</>), (<+/>), (<//>),
     group, flatten, prefixLines,
 
@@ -114,6 +114,11 @@ data Doc -- | The empty document
          | LazyText L.Text
          -- | Newline
          | Line
+         -- | Mandatory newline
+         | HardLine
+         -- | Try a flat layout, falling back if it is too wide or has a
+         -- hardline
+         | Group Doc
          -- | Indented document
          | Nest {-# UNPACK #-} !Int Doc
          -- | Prefix each rendered line within a scope
@@ -337,8 +342,25 @@ srcloc x = SrcLoc (locOf x)
 
 -- | The document @'line'@ advances to the next line and indents to the current
 -- indentation level. When undone by 'group', it behaves like 'space'.
+-- Use 'hardline' when a newline must survive grouping and flattening.
 line :: Doc
 line = Line
+
+-- | A mandatory newline, with indentation supplied by the current nesting.
+-- Unlike 'line', it survives 'group' and 'flatten'. Compact rendering preserves
+-- the newline but ignores indentation, as it does for 'line'.
+--
+-- A group whose flat layout encounters 'hardline' uses its original document.
+-- Nested groups in that document can still choose their own layouts.
+--
+-- >>> pretty 80 (group (text "a" <> hardline <> text "b"))
+-- "a\nb"
+-- >>> pretty 80 (group (text "a" </> text "b" <> hardline <> text "c"))
+-- "a\nb\nc"
+--
+-- @since 1.0.0
+hardline :: Doc
+hardline = HardLine
 
 -- | Becomes 'space' if there is room, otherwise 'line'.
 --
@@ -393,16 +415,21 @@ x <//> y = x <> softbreak <> y
 (<|>) :: Doc -> Doc -> Doc
 x <|> y = x `Alt` y
 
--- | The document @'group' d@ will flatten @d@ to /one/ line if there is
--- room for it, otherwise the original @d@.
--- The fit check includes content following the group on the same output line.
+-- | The document @'group' d@ will flatten @d@ to /one/ line if there is room
+-- for it and the flat layout has no 'hardline', otherwise the original @d@. The
+-- fit check includes content following the group on the same output line. A
+-- 'hardline' after the group ends that fit check without preventing the group
+-- itself from flattening. Nested groups in the original document retain their
+-- own layout choices.
 group :: Doc -> Doc
 group Empty = Empty
-group d     = flatten d `Alt` d
+group d     = Group d
 
--- | The document @'flatten' d@ will flatten @d@ to /one/ line.
--- It replaces 'line' with 'space' and selects the left branch of alternatives.
--- Source directives emitted during pragma display can still add physical lines.
+-- | Replace 'line' with 'space' and select the left branch of alternatives.
+-- 'hardline' is preserved, so the result can still occupy multiple lines.
+-- Unlike 'group', this converts ordinary breaks even if a mandatory break is
+-- present. Groups inside the document are flattened in the same way.
+-- Source directives emitted during pragma display can also add physical lines.
 flatten :: Doc -> Doc
 flatten Empty          = Empty
 flatten (Char c)       = Char c
@@ -410,6 +437,8 @@ flatten (String l s)   = String l s
 flatten (Text s)       = Text s
 flatten (LazyText s)   = LazyText s
 flatten Line           = Char ' '
+flatten HardLine       = HardLine
+flatten (Group d)      = flatten d
 flatten (x `Cat` y)    = flatten x `Cat` flatten y
 flatten (Nest i x)     = Nest i (flatten x)
 flatten (Prefix l s x) = Prefix l s (flatten x)
@@ -441,9 +470,11 @@ flatten (Nesting f)    = Nesting (flatten . f)
 -- inserted prefix does not prevent a leading 'srcloc' annotation from applying.
 -- 'renderCompact' preserves prefixes while ignoring indentation as usual.
 --
--- This combinator does not terminate a line comment. Place the following code
--- after a 'line' outside any enclosing 'group' that could flatten that
--- separator.
+-- This combinator does not terminate a line comment. Use 'hardline' to separate
+-- following code, even inside an enclosing 'group':
+--
+-- >>> pretty 80 (group (prefixLines "-- " (text "comment") <> hardline <> text "code"))
+-- "-- comment\ncode"
 --
 -- @since 1.0.0
 prefixLines :: String -> Doc -> Doc
@@ -721,10 +752,28 @@ type RDocS = RDoc -> RDoc
 
 data Docs -- | No document.
           = Nil
-          -- | Indentation, document and tail
-          | Cons {-# UNPACK #-} !Int Doc Docs
+          -- | Layout mode, indentation, document and tail
+          | Cons !LayoutMode {-# UNPACK #-} !Int Doc Docs
+          -- | End a group's flat trial before examining following content
+          | EndFlat Docs
           -- | Restore the enclosing prefix scope
           | EndPrefix Prefixes Docs
+
+-- Each queued fragment carries its mode so a group's flat trial ends at the
+-- group's boundary, including when column/nesting generate more documents.
+data LayoutMode = Normal | Flat deriving Eq
+
+-- Only a hardline in a flat trial produces an invalid layout. The enclosing
+-- group always supplies a normal fallback, so invalid layouts cannot reach the
+-- public RDoc. Keep this status private rather than adding a failure
+-- constructor to the exported rendered-document type.
+data Layout = Layout !Bool RDoc
+
+layoutValid :: Layout -> Bool
+layoutValid (Layout valid _) = valid
+
+layoutDoc :: Layout -> RDoc
+layoutDoc (Layout _ d) = d
 
 -- Cache depth and total width so ordinary fragments need not walk the scopes.
 -- The renderer records how many scopes have emitted a prefix on this line.
@@ -753,7 +802,7 @@ pendingPrefixes emitted (PrefixScope depth _ l s ps)
 
 best :: Int -> Int -> Doc -> RDoc
 best !pageWidth initialColumn doc =
-    be NoPrefixes 0 True Nothing Nothing initialColumn id (Cons 0 doc Nil)
+    layoutDoc (be NoPrefixes 0 True Nothing Nothing initialColumn id (Cons Normal 0 doc Nil))
   where
     be :: Prefixes  -- ^ Active prefix scopes
        -> Int       -- ^ Scopes that have emitted their prefix on this line
@@ -763,14 +812,16 @@ best !pageWidth initialColumn doc =
        -> Int       -- ^ Current column, excluding pending prefixes
        -> RDocS     -- ^ Our continuation
        -> Docs      -- ^ 'Docs' to layout
-       -> RDoc
+       -> Layout
     -- The scope count and line mapping are strict. Lazy updates would keep one
     -- thunk per empty scope, unannotated line, or text fragment until a later
     -- fragment or annotation inspected them.
-    be _ !_ _ !_ _ !_ f Nil = f REmpty
+    be _ !_ _ !_ _ !_ f Nil                         = Layout True (f REmpty)
+    be ps !emitted nl !p p' !k f (EndFlat ds)       =
+        Layout True (f (layoutDoc (be ps emitted nl p p' k id ds)))
     be _ !emitted nl !p p' !k f (EndPrefix ps ds)   =
         be ps (min emitted (prefixDepth ps)) nl p p' k f ds
-    be ps !emitted nl !p p' !k f (Cons i d ds) =
+    be ps !emitted nl !p p' !k f (Cons mode i d ds) =
         case d of
           -- Empty fragments must not emit or consume annotations or prefixes.
           Empty      -> next k f ds
@@ -781,20 +832,28 @@ best !pageWidth initialColumn doc =
           String l s -> content (k' + l) (RString l s)
           Text s     -> content (k' + T.length s) (RText s)
           LazyText s -> content (k' + fromIntegral (L.length s)) (RLazyText s)
-          Line       -> (f . prag . pref . RLine i)
-                            (be ps 0 True nextLine Nothing i id ds)
-          x `Cat` y  -> next k f (Cons i x (Cons i y ds))
-          Nest j x   -> next k f (Cons (i+j) x ds)
+          Line | mode == Flat -> content (k' + 1) (RChar ' ')
+               | otherwise -> newline
+          HardLine | mode == Flat -> Layout False REmpty
+                   | otherwise -> newline
+          Group x | mode == Flat -> next k f (Cons Flat i x ds)
+                  | otherwise -> better k f (next k id (Cons Flat i x (EndFlat ds)))
+                                            (next k id (Cons Normal i x ds))
+          x `Cat` y  -> next k f (Cons mode i x (Cons mode i y ds))
+          Nest j x   -> next k f (Cons mode (i+j) x ds)
           Prefix l s x -> be (pushPrefix l s ps) emitted nl p p' k f
-                            (Cons i x (EndPrefix ps ds))
-          x `Alt` y  -> better k f (next k id (Cons i x ds))
-                                   (next k id (Cons i y ds))
+                            (Cons mode i x (EndPrefix ps ds))
+          x `Alt` y | mode == Flat -> next k f (Cons Flat i x ds)
+                    | otherwise -> better k f (next k id (Cons Normal i x ds))
+                                              (next k id (Cons Normal i y ds))
           SrcLoc loc | nl -> be ps emitted nl p (updatePos p' loc) k f ds
                      | otherwise -> next k f ds
-          Column g   -> next k f (Cons i (g k') ds)
-          Nesting g  -> next k f (Cons i (g (i + prefixWidth ps)) ds)
+          Column g   -> next k f (Cons mode i (g k') ds)
+          Nesting g  -> next k f (Cons mode i (g (i + prefixWidth ps)) ds)
       where
         next = be ps emitted nl p p'
+        newline = Layout True ((f . prag . pref . RLine i)
+            (layoutDoc (be ps 0 True nextLine Nothing i id ds)))
         (pendingWidth, pref) = pendingPrefixes emitted ps
         k' = k + pendingWidth
         content columnAfter fragment =
@@ -825,9 +884,16 @@ best !pageWidth initialColumn doc =
     advance :: Pos -> Pos
     advance (Pos file l c coff) = Pos file (l+1) c coff
 
-    better :: Int -> RDocS -> RDoc -> RDoc -> RDoc
-    better !k f x y | fits (pageWidth - k) x = f x
-                    | otherwise              = f y
+    better :: Int -> RDocS -> Layout -> Layout -> Layout
+    better !k f x y = Layout True chosen
+      where
+        -- A normal alternative always has a valid fallback. Expose that fact
+        -- without forcing its output, so preceding text can satisfy an outer
+        -- fit check without traversing all later alternatives on the line.
+        chosen | xFits     = f (layoutDoc x)
+               | otherwise = f (layoutDoc y)
+        xFits = remaining >= 0 && layoutValid x && fits remaining (layoutDoc x)
+        remaining = pageWidth - k
 
     fits :: Int -> RDoc -> Bool
     fits  !w  _        | w < 0 = False
@@ -844,44 +910,70 @@ best !pageWidth initialColumn doc =
     updatePos _        (Loc p _) = Just p
     updatePos (Just p) NoLoc     = Just p
 
--- | Render without width-based choices, nesting, or source annotations.
--- Always selects the left alternative and preserves hard line breaks that
--- remain in that alternative. Line prefixes are preserved. 'nesting' queries
--- see only the active prefix widths, while 'column' tracks emitted text and
--- resets to the pending prefix width at each line break.
+-- | Render without width-based choices, nesting, or source annotations. Always
+-- selects the left explicit alternative. Groups use a flat layout unless it
+-- encounters 'hardline', in which case their original document is used.
+-- Preserves 'line' and 'hardline' breaks in the selected layout, and line
+-- prefixes. 'nesting' queries see only the active prefix widths, while 'column'
+-- tracks emitted text and resets to the pending prefix width at each line
+-- break.
+--
+-- Before emitting a group's text, compact rendering examines its flat form
+-- through the end of the group or the first 'hardline'. A group with an
+-- infinite flat form and no mandatory break therefore cannot produce output.
+-- Ungrouped documents can still produce output incrementally.
 renderCompact :: Doc -> RDoc
-renderCompact doc = scan NoPrefixes 0 0 (Cons 0 doc Nil)
+renderCompact doc = layoutDoc (scan NoPrefixes 0 0 id (Cons Normal 0 doc Nil))
   where
-    scan :: Prefixes -> Int -> Int -> Docs -> RDoc
+    scan :: Prefixes -> Int -> Int -> RDocS -> Docs -> Layout
     -- The scope count is strict, as in 'best'.
-    scan _ !_ !_ Nil = REmpty
-    scan _ !emitted !k (EndPrefix ps ds) =
-        scan ps (min emitted (prefixDepth ps)) k ds
-    scan ps !emitted !k (Cons _ d ds) =
+    scan _ !_ !_ f Nil                       = Layout True (f REmpty)
+    scan ps !emitted !k f (EndFlat ds)       =
+        Layout True (f (layoutDoc (scan ps emitted k id ds)))
+    scan _ !emitted !k f (EndPrefix ps ds)   =
+        scan ps (min emitted (prefixDepth ps)) k f ds
+    scan ps !emitted !k f (Cons mode _ d ds) =
         case d of
-          Empty      -> next k ds
-          String 0 s -> RString 0 s (next k ds)
-          Text s | T.null s -> RText s (next k ds)
-          LazyText s | L.null s -> RLazyText s (next k ds)
-          Char c     -> content (k' + 1) (RChar c)
-          String l s -> content (k' + l) (RString l s)
-          Text s     -> content (k' + T.length s) (RText s)
-          LazyText s -> content (k' + fromIntegral (L.length s)) (RLazyText s)
-          Line       -> pref (RLine 0 (scan ps 0 0 ds))
-          Nest _ x   -> next k (Cons 0 x ds)
-          Prefix l s x -> scan (pushPrefix l s ps) emitted k
-                              (Cons 0 x (EndPrefix ps ds))
-          SrcLoc _   -> next k ds
-          Cat x y    -> next k (Cons 0 x (Cons 0 y ds))
-          Alt x _    -> next k (Cons 0 x ds)
-          Column f   -> next k (Cons 0 (f k') ds)
-          Nesting f  -> next k (Cons 0 (f (prefixWidth ps)) ds)
+          Empty                   -> next k f ds
+          String 0 s              -> emit k emitted (RString 0 s)
+          Text s | T.null s       -> emit k emitted (RText s)
+          LazyText s | L.null s   -> emit k emitted (RLazyText s)
+          Char c                  -> content (k' + 1) (RChar c)
+          String l s              -> content (k' + l) (RString l s)
+          Text s                  -> content (k' + T.length s) (RText s)
+          LazyText s              -> content (k' + fromIntegral (L.length s)) (RLazyText s)
+          Line | mode == Flat     -> content (k' + 1) (RChar ' ')
+               | otherwise        -> newline
+          HardLine | mode == Flat -> Layout False REmpty
+                   | otherwise    -> newline
+          Group x | mode == Flat  -> next k f (Cons Flat 0 x ds)
+                  | otherwise     -> let flat = next k id (Cons Flat 0 x (EndFlat ds))
+                                         chosen | layoutValid flat = layoutDoc flat
+                                                | otherwise        = layoutDoc (next k id (Cons Normal 0 x ds))
+                                     in Layout True (f chosen)
+          Nest _ x                 -> next k f (Cons mode 0 x ds)
+          Prefix l s x             -> scan (pushPrefix l s ps) emitted k f
+                                           (Cons mode 0 x (EndPrefix ps ds))
+          SrcLoc _                 -> next k f ds
+          Cat x y                  -> next k f (Cons mode 0 x (Cons mode 0 y ds))
+          Alt x _                  -> next k f (Cons mode 0 x ds)
+          Column g                 -> next k f (Cons mode 0 (g k') ds)
+          Nesting g                -> next k f (Cons mode 0 (g (prefixWidth ps)) ds)
       where
         next = scan ps emitted
         (pendingWidth, pref) = pendingPrefixes emitted ps
         k' = k + pendingWidth
-        content columnAfter fragment =
-            pref (fragment (scan ps (prefixDepth ps) columnAfter ds))
+        newline = Layout True ((f . pref . RLine 0) (layoutDoc (scan ps 0 0 id ds)))
+        content columnAfter fragment = emit columnAfter (prefixDepth ps) (pref . fragment)
+
+        -- Normal compact output stays incremental. A flat trial must establish
+        -- validity through its entire scope before exposing any of its text.
+        -- Accumulate that text in a continuation, keeping the scan tail
+        -- recursive.
+        emit columnAfter scopes fragment
+            | mode == Flat = scan ps scopes columnAfter (f . fragment) ds
+            | otherwise    = Layout True ((f . fragment)
+                (layoutDoc (scan ps scopes columnAfter id ds)))
 
 -- | Display a rendered document, ignoring source annotations. The result is a
 -- 'ShowS' function that prepends the output to its argument. No final newline
