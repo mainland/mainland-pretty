@@ -9,17 +9,16 @@
 -- Stability   :  provisional
 -- Portability :  portable
 --
--- This module is based on /A Prettier Printer/ by Phil Wadler in
--- /The Fun of Programming/, Jeremy Gibbons and Oege de Moor (eds)
--- <http://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf>
+-- Build 'Doc' values from text, separators, nesting, and alternative layouts.
+-- 'render' chooses a layout using a preferred width. 'pretty' produces a String,
+-- while 'prettyLazyText' uses a builder to produce lazy Text. Source annotations
+-- added with 'srcloc' can be displayed as C @#line@ directives by 'prettyPragma'
+-- and 'prettyPragmaLazyText'.
 --
--- At the time it was originally written I didn't know about Daan Leijen's
--- pretty printing module based on the same paper. I have since incorporated
--- many of his improvements. This module is geared towards pretty printing
--- source code; its main advantages over other libraries are the ability to
--- automatically track the source locations associated with pretty printed
--- values and output appropriate #line pragmas and the use of
--- 'Data.Text.Lazy.Text' for output.
+-- This module is based on /A Prettier Printer/ by Phil Wadler in
+-- /The Fun of Programming/, Jeremy Gibbons and Oege de Moor (eds), with
+-- combinators inspired by Daan Leijen's pretty-printing library.
+-- <http://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf>
 
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP          #-}
@@ -33,7 +32,7 @@ module Text.PrettyPrint.Mainland (
     text, bool, char, string, int, integer, float, double, rational,
     strictText, lazyText,
 
-    -- ** Simple documents documents
+    -- ** Simple documents
     star, colon, comma, dot, equals, semi, space, spaces,
     backquote, squote, dquote,
     langle, rangle, lbrace, rbrace, lbracket, rbracket, lparen, rparen,
@@ -90,11 +89,24 @@ import           Numeric                (showOct)
 import           System.IO              (Handle)
 
 -- | The abstract type of documents.
+--
+-- @(<>)@ concatenates documents without a separator, and 'mempty' is 'empty'.
+-- Concatenation does not normalize the internal representation. Separator
+-- combinators such as '(<+>)' recognize the literal 'empty' document, but do not
+-- recognize every document that happens to display no characters:
+--
+-- >>> pretty 80 (empty <+> text "x")
+-- "x"
+-- >>> pretty 80 (text "" <+> text "x")
+-- " x"
+--
+-- The 'IsString' instance uses 'string', so overloaded string literals preserve
+-- newlines as layout-aware 'line' documents.
 data Doc -- | The empty document
          =  Empty
          -- | A single character
          | Char {-# UNPACK #-} !Char
-         -- | 'String' with associated length (to avoid recomputation)
+         -- | String with its cached length
          | String {-# UNPACK #-} !Int String
          -- | 'T.Text'
          | Text T.Text
@@ -108,8 +120,8 @@ data Doc -- | The empty document
          | SrcLoc Loc
          -- | Document concatenation
          | Doc `Cat` Doc
-         -- | Provide alternatives. Invariant: both arguments must flatten to
-         -- the same document.
+         -- | Alternative layouts. Public (<|>) requires equal flattened content.
+         -- Internal softbreak also permits a space to be omitted.
          | Doc `Alt` Doc
          -- | Calculate document based on current column
          | Column  (Int -> Doc)
@@ -130,6 +142,7 @@ instance IsString Doc where
 
 -- | The document @'text' s@ consists of the string @s@, which should not
 -- contain any newlines. For a string that may include newlines, use 'string'.
+-- Its length is cached when the document is evaluated, so @s@ must be finite.
 text :: String -> Doc
 text s = String (length s) s
 
@@ -137,7 +150,8 @@ text s = String (length s) s
 bool :: Bool -> Doc
 bool b = text (show b)
 
--- | The document @'char' c@ consists the single character @c@.
+-- | The document @'char' c@ consists of the single character @c@. A newline
+-- character produces 'line' and therefore participates in layout.
 char :: Char -> Doc
 char '\n' = line
 char c    = Char c
@@ -155,7 +169,6 @@ int :: Int -> Doc
 int i = text (show i)
 
 -- | The document @integer i@ is equivalent to @text (show i)@.
--- 'text'.
 integer :: Integer -> Doc
 integer i = text (show i)
 
@@ -178,6 +191,8 @@ strictText = Text
 
 -- | The document @'lazyText' s@ consists of the 'L.Text' @s@, which should
 -- not contain any newlines.
+-- The input remains chunked, but width-sensitive rendering measures its total
+-- length. Use finite text fragments when streaming a larger document.
 lazyText :: L.Text -> Doc
 lazyText = LazyText
 
@@ -209,7 +224,9 @@ semi = char ';'
 space :: Doc
 space = char ' '
 
--- | The document @'space' n@ consists of n spaces.
+-- | The document @'spaces' n@ consists of @n@ spaces. Nonpositive values
+-- produce no characters, but the result is distinct from the literal 'empty'
+-- document when used with separator combinators.
 spaces :: Int -> Doc
 spaces n = text (replicate n ' ')
 
@@ -241,19 +258,19 @@ lbrace = char '{'
 rbrace :: Doc
 rbrace = char '}'
 
--- | The document @lbracket@ consists of a right brace, @\"[\"@.
+-- | The document @lbracket@ consists of a left bracket, @\"[\"@.
 lbracket :: Doc
 lbracket = char '['
 
--- | The document @rbracket@ consists of a right brace, @\"]\"@.
+-- | The document @rbracket@ consists of a right bracket, @\"]\"@.
 rbracket :: Doc
 rbracket = char ']'
 
--- | The document @lparen@ consists of a right brace, @\"(\"@.
+-- | The document @lparen@ consists of a left parenthesis, @\"(\"@.
 lparen :: Doc
 lparen = char '('
 
--- | The document @rparen@ consists of a right brace, @\")\"@.
+-- | The document @rparen@ consists of a right parenthesis, @\")\"@.
 rparen :: Doc
 rparen = char ')'
 
@@ -274,6 +291,12 @@ empty = Empty
 -- a blank 'line' applies to that blank line. An annotation at the end of the
 -- document without text or a line break emits nothing. 'NoLoc' leaves both
 -- pending annotations and the existing source mapping unchanged.
+--
+-- Tracking uses the starting filename and line number of the location. Columns,
+-- offsets, and span endpoints do not affect directive output. Unannotated lines
+-- advance an established mapping. An annotation matching that mapping needs no
+-- new directive. Ordinary display hides annotations, and 'renderCompact'
+-- discards them.
 srcloc :: Located a => a -> Doc
 srcloc x = SrcLoc (locOf x)
 
@@ -284,13 +307,18 @@ line = Line
 
 -- | Becomes 'space' if there is room, otherwise 'line'.
 --
--- > pretty 11 $ text "foo" <+/> text "bar" <+/> text "baz" =="foo bar baz"
--- > pretty  7 $ text "foo" <+/> text "bar" <+/> text "baz" == "foo bar\nbaz"
--- > pretty  6 $ text "foo" <+/> text "bar" <+/> text "baz" == "foo\nbar\nbaz"
+-- >>> pretty 11 (text "foo" <+/> text "bar" <+/> text "baz")
+-- "foo bar baz"
+-- >>> pretty 7 (text "foo" <+/> text "bar" <+/> text "baz")
+-- "foo bar\nbaz"
+-- >>> pretty 6 (text "foo" <+/> text "bar" <+/> text "baz")
+-- "foo\nbar\nbaz"
 softline :: Doc
 softline = space `Alt` line
 
 -- | Becomes 'empty' if there is room, otherwise 'line'.
+-- Unlike 'softline', its flat form omits whitespace rather than inserting a
+-- space. This is an internal exception to the invariant of '(<|>)'.
 softbreak :: Doc
 softbreak = empty `Alt` line
 
@@ -324,16 +352,22 @@ x <//> y = x <> softbreak <> y
 
 -- | Provide alternative layouts of the same content. Invariant: both arguments
 -- must flatten to the same document.
+-- The renderer tries the left alternative first. It selects the right one if
+-- the left alternative, including following content on that line, does not fit.
+-- This invariant is the caller's responsibility and is not checked.
 (<|>) :: Doc -> Doc -> Doc
 x <|> y = x `Alt` y
 
 -- | The document @'group' d@ will flatten @d@ to /one/ line if there is
 -- room for it, otherwise the original @d@.
+-- The fit check includes content following the group on the same output line.
 group :: Doc -> Doc
 group Empty = Empty
 group d     = flatten d `Alt` d
 
 -- | The document @'flatten' d@ will flatten @d@ to /one/ line.
+-- It replaces 'line' with 'space' and selects the left branch of alternatives.
+-- Source directives emitted during pragma display can still add physical lines.
 flatten :: Doc -> Doc
 flatten Empty        = Empty
 flatten (Char c)     = Char c
@@ -355,7 +389,7 @@ flatten (Nesting f)  = Nesting (flatten . f)
 enclose :: Doc -> Doc -> Doc -> Doc
 enclose left right d = left <> d <> right
 
--- | The document @'squotes' d@ encloses the alinged document @d@ in \'...\'.
+-- | The document @'squotes' d@ encloses the aligned document @d@ in \'...\'.
 squotes :: Doc -> Doc
 squotes = enclose squote squote . align
 
@@ -383,7 +417,7 @@ brackets = enclose lbracket rbracket . align
 parens :: Doc -> Doc
 parens = enclose lparen rparen . align
 
--- | The document @'parensIf' p d@ encloses the document @d@ in parenthesis if
+-- | The document @'parensIf' p d@ encloses the document @d@ in parentheses if
 -- @p@ is @True@, and otherwise yields just @d@.
 parensIf :: Bool -> Doc -> Doc
 parensIf True doc  = parens doc
@@ -392,7 +426,11 @@ parensIf False doc = doc
 -- | The document @'folddoc' f ds@ obeys the laws:
 --
 -- * @'folddoc' f [] = 'empty'@
--- * @'folddoc' f [d1, d2, ..., dnm1, dn] = d1 `f` (d2 `f` ... (dnm1 `f` dn))@
+-- * @'folddoc' f [d1, d2, ..., dnm1, dn] = f d1 (f d2 ... (f dnm1 dn))@
+--
+-- This is a right fold without an extra application of @f@ to 'empty'. Its
+-- stack usage depends on @f@. Prefer 'spread', 'stack', or 'sep' for standard
+-- separators on large lists.
 folddoc :: (Doc -> Doc -> Doc) -> [Doc] -> Doc
 folddoc _ []     = empty
 folddoc _ [x]    = x
@@ -447,12 +485,12 @@ punctuate _ [d]    = [d]
 punctuate p (d:ds) = (d <> p) : punctuate p ds
 
 -- | The document @'commasep' ds@ comma-space separates @ds@, aligning the
--- resulting document to the current nesting level.
+-- resulting document to the current column.
 commasep :: [Doc] -> Doc
 commasep = align . sep . punctuate comma
 
 -- | The document @'semisep' ds@ semicolon-space separates @ds@, aligning the
--- resulting document to the current nesting level.
+-- resulting document to the current column.
 semisep :: [Doc] -> Doc
 semisep = align . sep . punctuate semi
 
@@ -467,7 +505,7 @@ semisep = align . sep . punctuate semi
 -- \> test = pretty 15 (enclosesep lparen rparen comma ws)
 -- @
 --
--- will be layed out as:
+-- is laid out as:
 --
 -- @
 -- (The, quick,
@@ -513,6 +551,10 @@ indent i d = align (nest i (spaces i <> d))
 
 -- | The document @'nest' i d@ renders the document @d@ with the current
 -- indentation level increased by @i@.
+-- This affects indentation after line breaks, not the first line. Negative
+-- values are accepted. Nonpositive nesting emits no indentation spaces, but
+-- negative nesting and column values remain observable through 'nesting' and
+-- 'column'.
 nest :: Int -> Doc -> Doc
 nest i d = Nest i d
 
@@ -521,19 +563,21 @@ nest i d = Nest i d
 column :: (Int -> Doc) -> Doc
 column = Column
 
--- | The document @'column' f@ is produced by calling @f@ with the
+-- | The document @'nesting' f@ is produced by calling @f@ with the
 -- current nesting level.
 nesting :: (Int -> Doc) -> Doc
 nesting = Nesting
 
--- | The document @'width' d f@ is produced by concatenating @d@ with the result
--- of calling @f@ with the width of the document @d@.
+-- | The document @'width' d f@ concatenates @d@ with the result of calling @f@
+-- with the difference between the columns after and before @d@. This is not
+-- the maximum line width of a multiline document. The difference can be negative.
 width :: Doc -> (Int -> Doc) -> Doc
 width d f = column $ \k1 -> d <> (column $ \k2 -> f (k2 - k1))
 
--- | The document @'fill' i d@ renders document @x@, appending
--- @space@s until the width is equal to @i@. If the width of @d@ is already
--- greater than @i@, nothing is appended.
+-- | The document @'fill' i d@ renders document @d@, appending
+-- spaces until the width is equal to @i@. If the width of @d@ is already
+-- greater than @i@, nothing is appended. Width is the column change measured
+-- by 'width'.
 fill :: Int -> Doc -> Doc
 fill f d = width d $ \w ->
            if w >= f
@@ -542,7 +586,8 @@ fill f d = width d $ \w ->
 
 -- | The document @'fillbreak' i d@ renders document @d@, appending @'space'@s
 -- until the width is equal to @i@. If the width of @d@ is already greater than
--- @i@, the nesting level is increased by @i@ and a @line@ is appended.
+-- @i@, the nesting level is increased by @i@ and a 'line' is appended. Width
+-- is the column change measured by 'width'.
 fillbreak :: Int -> Doc -> Doc
 fillbreak f d = width d $ \w ->
                 if (w > f)
@@ -562,24 +607,44 @@ errordoc :: Doc -> a
 errordoc = error . pretty 80
 
 -- | A rendered document.
+--
+-- Constructors hold an output fragment and the remaining document. Text
+-- fragments should not contain newlines. Use 'RLine' for line breaks. Position
+-- annotations produced by 'render' occur only where a directive is needed.
+-- When constructing values directly, place at most one 'RPos' at the beginning
+-- of each output line, before any text and immediately after its 'RLine' if one
+-- is present. Display functions do not validate this convention.
 data RDoc -- | The empty document
           = REmpty
           -- | A single character
           | RChar {-# UNPACK #-} !Char RDoc
-          -- | 'String' with associated length (to avoid recomputation)
+          -- | String with its cached character count, which should equal its
+          -- length. Display functions output the string as supplied.
           | RString {-# UNPACK #-} !Int String RDoc
           -- | 'T.Text'
           | RText T.Text RDoc
           -- | 'L.Text'
           | RLazyText L.Text RDoc
-          -- | Tag output with source location
+          -- | A source position. Ordinary display ignores it. Pragma display
+          -- emits a directive followed by a newline.
           | RPos Pos RDoc
-          -- | A newline with the indentation of the subsequent line. If this is
-          -- followed by a 'RPos', output an appropriate #line pragma /before/
-          -- the newline.
+          -- | A newline followed by the given number of indentation spaces.
+          -- Nonpositive values add no spaces. When immediately followed by
+          -- 'RPos', pragma display puts the directive after this newline and
+          -- before the indentation.
           | RLine {-# UNPACK #-} !Int RDoc
 
--- | Render a document given a maximum width.
+-- | Render a document using a preferred line width.
+--
+-- Width guides alternative selection and does not split indivisible text or
+-- truncate output. Zero and negative widths are accepted. Columns advance by
+-- character counts using @length@, 'T.length', or 'L.length', not by byte counts
+-- or terminal display cells. Tabs are not expanded, and combining characters
+-- and wide glyphs do not receive special treatment.
+--
+-- Nesting supplies the column after a line break. See 'nest' for negative
+-- indentation. Source directives have zero layout width even though pragma
+-- display adds physical lines for them.
 render :: Int -> Doc -> RDoc
 render w x = best w 0 x
 
@@ -659,9 +724,10 @@ best !pageWidth initialColumn doc = be True Nothing Nothing initialColumn id (Co
     updatePos _        (Loc p _) = Just p
     updatePos (Just p) NoLoc     = Just p
 
--- | Render a document without indentation on infinitely long lines. Since no
--- \'pretty\' printing is involved, this renderer is fast. The resulting output
--- contains fewer characters.
+-- | Render without width-based choices, nesting, or source annotations.
+-- Always selects the left alternative and preserves hard line breaks that
+-- remain in that alternative. 'nesting' queries see zero, while 'column' still
+-- tracks emitted text and resets to zero at each line break.
 renderCompact :: Doc -> RDoc
 renderCompact doc = scan 0 [doc]
   where
@@ -682,7 +748,9 @@ renderCompact doc = scan 0 [doc]
           Column f   -> scan k (f k:ds)
           Nesting f  -> scan k (f 0:ds)
 
--- | Display a rendered document.
+-- | Display a rendered document, ignoring source annotations. The result is a
+-- 'ShowS' function that prepends the output to its argument. No final newline
+-- is added.
 displayS :: RDoc -> ShowS
 displayS = go
   where
@@ -699,7 +767,7 @@ displayS = go
 prettyS :: Int -> Doc -> ShowS
 prettyS w x = displayS (render w x)
 
--- | Render and convert a document to a 'String'.
+-- | Render and convert a document to a @String@.
 pretty :: Int -> Doc -> String
 pretty w x = prettyS w x ""
 
@@ -707,7 +775,7 @@ pretty w x = prettyS w x ""
 prettyCompactS :: Doc -> ShowS
 prettyCompactS x = displayS (renderCompact x)
 
--- | Render and convert a document to a 'String' compactly.
+-- | Render and convert a document to a @String@ compactly.
 prettyCompact :: Doc -> String
 prettyCompact x = prettyCompactS x ""
 
@@ -766,7 +834,7 @@ quotePragmaFile file = '"' : foldr escape "\"" file
 prettyPragmaS :: Int -> Doc -> ShowS
 prettyPragmaS w x = displayPragmaS (render w x)
 
--- | Render and convert a document to a 'String' with #line pragmas.
+-- | Render and convert a document to a @String@ with #line pragmas.
 --
 -- > import Data.Loc (linePos)
 -- >
@@ -785,7 +853,8 @@ prettyPragmaS w x = displayPragmaS (render w x)
 prettyPragma :: Int -> Doc -> String
 prettyPragma w x = prettyPragmaS w x ""
 
--- | Display a rendered document as 'L.Text'. Uses a builder.
+-- | Display a rendered document as 'L.Text' using a builder, ignoring source
+-- annotations. No final newline is added.
 displayLazyText :: RDoc -> L.Text
 displayLazyText = B.toLazyText . go
   where

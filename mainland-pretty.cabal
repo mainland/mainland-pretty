@@ -37,6 +37,7 @@ tested-with:    GHC==8.0.2,
 build-type:     Simple
 
 extra-source-files:
+  README.md
   .stylish-haskell.yaml
 
 library

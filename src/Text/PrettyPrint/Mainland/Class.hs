@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP #-}
 
 -- |
--- Module      :  Text.PrettyPrint.Mainland
+-- Module      :  Text.PrettyPrint.Mainland.Class
 -- Copyright   :  (c) 2006-2011 Harvard University
 --                (c) 2011-2012 Geoffrey Mainland
 --                (c) 2015-2017 Drexel University
@@ -11,17 +11,13 @@
 -- Stability   :  provisional
 -- Portability :  portable
 --
--- This module is based on /A Prettier Printer/ by Phil Wadler in
--- /The Fun of Programming/, Jeremy Gibbons and Oege de Moor (eds)
--- <http://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf>
+-- Convert values to layout-aware documents with 'Pretty', or print them with
+-- 'pprint'. Rendering functions and document combinators are provided by
+-- "Text.PrettyPrint.Mainland".
 --
--- At the time it was originally written I didn't know about Daan Leijen's
--- pretty printing module based on the same paper. I have since incorporated
--- many of his improvements. This module is geared towards pretty printing
--- source code; its main advantages over other libraries are the ability to
--- automatically track the source locations associated with pretty printed
--- values and output appropriate #line pragmas and the use of
--- 'Data.Text.Lazy.Text' for output.
+-- The instances favor readable source fragments rather than serialization.
+-- Characters and strings are unquoted. 'Maybe' prints its payload or nothing,
+-- and located values print their payload without adding a source annotation.
 
 module Text.PrettyPrint.Mainland.Class (
     -- * The 'Pretty' type class for pretty printing
@@ -47,14 +43,32 @@ import           Data.Word
 import           Text.PrettyPrint.Mainland
 
 -- | The 'pprint' function outputs a value of any type that is an instance of
--- 'Pretty' to the standard output device by calling 'ppr' and adding a newline.
+-- 'Pretty' to standard output by calling 'ppr', rendering at width 80, and
+-- adding a newline.
 pprint :: (Pretty a, MonadIO m) => a -> m ()
 pprint = liftIO . putDocLn . ppr
 
+-- | Convert values to documents, optionally taking surrounding precedence into
+-- account. Define at least one of 'ppr' or 'pprPrec'. Their defaults delegate to
+-- each other, so defining neither causes infinite recursion.
+--
+-- Use 'pprPrec' for expression-like values whose parentheses depend on context.
+-- Use 'pprList' to specialize how lists of a type are printed, as the character
+-- instance does for strings.
 class Pretty a where
     {-# MINIMAL pprPrec | ppr #-}
-    ppr     :: a -> Doc
+    -- | Pretty print a value in an outermost context. Defaults to @pprPrec 0@.
+    ppr :: a -> Doc
+
+    -- | Pretty print a value in a context with the given precedence. By
+    -- convention, zero is the outermost context and higher values bind more
+    -- tightly, as in 'showsPrec'. Instances decide when parentheses are needed.
+    -- The default ignores precedence and calls 'ppr'.
     pprPrec :: Int -> a -> Doc
+
+    -- | Pretty print a list of values. Defaults to @list . map ppr@.
+    -- The 'Pretty' instance for lists calls this method on the element type,
+    -- so the character instance can print strings without brackets or quotes.
     pprList :: [a] -> Doc
 
     ppr        = pprPrec 0
@@ -71,6 +85,8 @@ instance Pretty a => Pretty (Maybe a) where
 instance Pretty Bool where
     ppr = bool
 
+-- | Characters are unquoted. Lists of characters use 'string', preserving
+-- newlines as layout-aware line breaks rather than escape sequences.
 instance Pretty Char where
     ppr     = char
     pprList = string
@@ -157,12 +173,16 @@ instance Pretty Loc where
                                        <> text "-" <>
                                        ppr l2 <//> colon <//> ppr c2
 
+-- | Print only the payload, preserving precedence. To attach source tracking,
+-- add 'srcloc' explicitly before the payload document.
 instance Pretty x => Pretty (L x) where
     pprPrec p (L _ x) = pprPrec p x
 
+-- | Print key-value pairs in ascending key order.
 instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
     ppr = pprList . Map.toList
 
+-- | Print elements in ascending order, using their list specialization.
 instance Pretty a => Pretty (Set.Set a) where
     ppr = pprList . Set.toList
 
