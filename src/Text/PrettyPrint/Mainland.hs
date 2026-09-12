@@ -30,7 +30,7 @@ module Text.PrettyPrint.Mainland (
     -- * Constructing documents
     -- ** Converting values into documents
     text, bool, char, string, int, integer, float, double, rational,
-    strictText, lazyText,
+    strictText, lazyText, strictTextLines, lazyTextLines,
 
     -- ** Simple documents
     star, colon, comma, dot, equals, semi, space, spaces,
@@ -187,16 +187,49 @@ rational :: Rational -> Doc
 rational r = text (show r)
 
 -- | The document @'strictText' s@ consists of the 'T.Text' @s@, which should
--- not contain any newlines.
+-- not contain any newlines. Use 'strictTextLines' for text that may contain
+-- them.
 strictText :: T.Text -> Doc
 strictText = Text
 
 -- | The document @'lazyText' s@ consists of the 'L.Text' @s@, which should
--- not contain any newlines.
+-- not contain any newlines. Use 'lazyTextLines' for text that may contain them.
 -- The input remains chunked, but width-sensitive rendering measures its total
 -- length. Use finite text fragments when streaming a larger document.
 lazyText :: L.Text -> Doc
 lazyText = LazyText
+
+-- | Convert strict Text to a document, replacing each newline (LF) with 'line',
+-- as 'string' does for String. Leading, consecutive, and trailing newlines are
+-- preserved as line breaks. Carriage returns remain literal characters.
+-- Empty input produces the literal 'empty' document.
+--
+-- The fragments remain Text rather than being unpacked into String. Line breaks
+-- participate in grouping, indentation, source tracking, and 'prefixLines'.
+-- Use 'strictText' when the input is known to be newline-free.
+--
+-- @since 1.0.0
+strictTextLines :: T.Text -> Doc
+strictTextLines s
+    | T.null s  = empty
+    | otherwise =
+        let (fragment, rest) = T.break (== '\n') s
+        in strictText fragment <>
+           if T.null rest then empty else line <> strictTextLines (T.drop 1 rest)
+
+-- | The lazy Text counterpart of 'strictTextLines'. Newlines (LF) become
+-- 'line', including across chunk boundaries, and empty input produces 'empty'.
+-- Fragments remain chunked lazy Text. Width-sensitive rendering measures each
+-- fragment up to the next newline, so individual lines must be finite.
+--
+-- @since 1.0.0
+lazyTextLines :: L.Text -> Doc
+lazyTextLines s
+    | L.null s  = empty
+    | otherwise =
+        let (fragment, rest) = L.break (== '\n') s
+        in lazyText fragment <>
+           if L.null rest then empty else line <> lazyTextLines (L.drop 1 rest)
 
 -- | The document @star@ consists of an asterisk, @\"*\"@.
 star :: Doc

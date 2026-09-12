@@ -46,7 +46,7 @@ import           Text.PrettyPrint.Mainland.Class
 
 main :: IO ()
 main = defaultMain $ testGroup "mainland-pretty"
-    [ primitiveTests, layoutTests, prefixTests, largeListTests, locationTests, filenameTests, classTests, outputTests
+    [ primitiveTests, multilineTextTests, layoutTests, prefixTests, largeListTests, locationTests, filenameTests, classTests, outputTests
     , localOption (QuickCheckTests 1000) $
       localOption (QuickCheckMaxSize 30) propertyTests
     ]
@@ -85,6 +85,55 @@ primitiveTests = testGroup "primitive documents"
             "\x1f600 x" | (name, make) <-
             [("String", text), ("strict Text", strictText . T.pack),
              ("chunked lazy Text", lazyText . LT.fromChunks . map T.singleton)]]
+    ]
+
+multilineTextTests :: TestTree
+multilineTextTests = testGroup "multiline Text" $
+    [ testGroup name
+        [ renderCase "blank and trailing lines" 80 (make "a\n\nb\n") "a\n\nb\n"
+        , renderCase "leading line" 80 (make "\na") "\na"
+        , renderCase "lone newline" 80 (make "\n") "\n"
+        , renderCase "empty input is a separator identity" 80
+            (make "" <+> text "x") "x"
+        , renderCase "lines participate in grouping" 3 (group (make "a\nb")) "a b"
+        , renderCase "narrow groups retain lines" 2 (group (make "a\nb")) "a\nb"
+        , renderCase "lines participate in flattening" 0 (flatten (make "a\nb")) "a b"
+        , renderCase "indentation follows line breaks" 80 (indent 2 (make "a\nb")) "  a\n  b"
+        , renderCase "prefixes repeat on all lines" 80
+            (prefixLines "-- " (make "first\nsecond")) "-- first\n-- second"
+        , renderCase "blank lines receive prefixes but the final break does not" 80
+            (prefixLines "-- " (make "\na\n\n")) "-- \n-- a\n-- \n"
+        , renderCase "column resets at a newline" 80
+            (make "abc\nx" <> column int) "abc\nx1"
+        , renderCase "carriage returns remain literal" 80
+            (group (make "a\r\nb")) "a\r b"
+        , pragmaCase "source tracking advances through embedded newlines" 80
+            (srcloc (linePos "f.c" 10) <> make "a\nb\n" <>
+             srcloc (linePos "f.c" 12) <> text "c")
+            "#line 10 \"f.c\"\na\nb\nc"
+        , pragmaCase "leading blank lines do not consume annotations" 80
+            (prefixLines "-- " (srcloc (linePos "f.c" 10) <> make "\na"))
+            "#line 10 \"f.c\"\n-- \n-- a"
+        , testCase "compact rendering retains embedded line breaks" $ do
+            let d = nest 2 (prefixLines "-- " (make "a\nb\n"))
+            prettyCompact d @?= "-- a\n-- b\n"
+            LT.unpack (displayLazyText (renderCompact d)) @?= "-- a\n-- b\n"
+        ]
+    | (name, make) <-
+        [("Pretty String", ppr), ("Pretty strict Text", ppr . T.pack),
+         ("Pretty lazy Text", ppr . LT.pack),
+         ("Pretty chunked lazy Text", ppr . LT.fromChunks . map T.singleton),
+         ("strictTextLines", strictTextLines . T.pack),
+         ("lazyTextLines", lazyTextLines . LT.pack),
+         ("chunked lazyTextLines", lazyTextLines . LT.fromChunks . map T.singleton)]
+    ] ++
+    [ testCase "lazy conversion does not force chunks beyond the next newline" $
+        take 2 (prettyCompact (lazyTextLines
+            (LT.fromChunks (T.pack "a\n" : error "tail forced")))) @?= "a\n"
+    , testCase "many strict Text lines render with a 1 MiB stack limit" $
+        LT.length (prettyLazyText 80 (strictTextLines (T.replicate 100000 (T.pack "x\n")))) @?= 200000
+    , testCase "many lazy Text lines render with a 1 MiB stack limit" $
+        LT.length (prettyLazyText 80 (lazyTextLines (LT.replicate 100000 (LT.pack "x\n")))) @?= 200000
     ]
 
 layoutTests :: TestTree
@@ -680,6 +729,19 @@ propertyTests = testGroup "generated rendering properties"
         let d = document text tree in prettyPragma w (d <> mempty) === prettyPragma w d
     , testProperty "compact display backends agree" $ \tree ->
         let d = document text tree in prettyCompact d === LT.unpack (displayLazyText (renderCompact d))
+    , testGroup "newline-aware Text agrees with String in generated contexts"
+        [ testProperty name $ \tree -> withWidth $ \w ->
+            let multiline = map (\c -> if c == ' ' then '\n' else c)
+                outputs convert =
+                    let d = document (convert . multiline) tree
+                    in (prettyPragma w d, prettyCompact d,
+                        prettyPragma w (text "before" <+> d <+> text "after"))
+            in outputs make === outputs string
+        | (name, make) <-
+            [("strict Text", strictTextLines . T.pack),
+             ("lazy Text", lazyTextLines . LT.pack),
+             ("chunked lazy Text", lazyTextLines . LT.fromChunks . map T.singleton)]
+        ]
     , testGroup "list combinators agree with right folds"
         [ testProperty name $ \trees -> withWidth $ \w ->
             let ds = map (maybe empty (document text)) trees

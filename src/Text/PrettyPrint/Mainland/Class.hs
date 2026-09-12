@@ -145,11 +145,17 @@ instance Pretty Int32 where
 instance Pretty Int64 where
     pprPrec p x = text (showsPrec p x "")
 
+-- | Unquoted text with newlines represented by layout-aware 'line' documents,
+-- like the String instance. Empty input produces 'empty'. Since 1.0.0, uses
+-- 'strictTextLines' instead of the newline-free 'strictText' primitive.
 instance Pretty T.Text where
-    ppr = strictText
+    ppr = strictTextLines
 
+-- | The lazy Text counterpart of the strict Text instance. Since 1.0.0, uses
+-- 'lazyTextLines' so embedded newlines participate in layout and empty input
+-- produces 'empty'.
 instance Pretty L.Text where
-    ppr = lazyText
+    ppr = lazyTextLines
 
 instance Pretty Doc where
     ppr doc = doc
