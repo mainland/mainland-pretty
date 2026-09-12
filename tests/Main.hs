@@ -10,7 +10,8 @@ import           Data.Complex                    (Complex ((:+)))
 import           Data.Int                        (Int16, Int32, Int64, Int8)
 import           Data.List                       (isInfixOf)
 import           Data.Loc                        (L (..), Loc (..), Pos (..),
-                                                  advancePos, linePos, posCoff)
+                                                  advancePos, linePos, posCoff,
+                                                  posFile)
 import qualified Data.Map                        as Map
 import           Data.Ratio                      ((%))
 #if !MIN_VERSION_base(4,11,0)
@@ -45,7 +46,7 @@ import           Text.PrettyPrint.Mainland.Class
 
 main :: IO ()
 main = defaultMain $ testGroup "mainland-pretty"
-    [ primitiveTests, layoutTests, locationTests, classTests, outputTests
+    [ primitiveTests, layoutTests, locationTests, filenameTests, classTests, outputTests
     , localOption (QuickCheckTests 1000) $
       localOption (QuickCheckMaxSize 30) propertyTests
     ]
@@ -316,6 +317,41 @@ positions (RText _ rest)     = positions rest
 positions (RLazyText _ rest) = positions rest
 positions (RLine _ rest)     = positions rest
 positions (RPos p rest)      = p : positions rest
+
+filenameTests :: TestTree
+filenameTests = testGroup "pragma filenames"
+    [ testGroup name
+        [ pragmaCase "document output" 80
+            (srcloc (linePos file 10) <> text "x") (directive ++ "\nx")
+        , testCase "public RPos output" $ do
+            let d = RPos (linePos file 10) (RChar 'x' REmpty)
+            displayPragmaS d "suffix" @?= directive ++ "\nxsuffix"
+            LT.unpack (displayPragmaLazyText d) @?= directive ++ "\nx"
+        , testCase "directive before indentation" $ do
+            let d = RLine 2 (RPos (linePos file 10) (RChar 'x' REmpty))
+            displayPragmaS d "suffix" @?= "\n" ++ directive ++ "\n  xsuffix"
+            LT.unpack (displayPragmaLazyText d) @?= "\n" ++ directive ++ "\n  x"
+        , testCase "render retains the original filename" $
+            map posFile (positions (render 80 (srcloc (linePos file 10) <> text "x")))
+                @?= [file]
+        ]
+    | (name, file, quoted) <- filenameCases
+    , let directive = "#line 10 " ++ quoted
+    ]
+
+filenameCases :: [(String, FilePath, String)]
+filenameCases =
+    [("ordinary path", "dir/file name.c", "\"dir/file name.c\"")
+    ,("empty path", "", "\"\"")
+    ,("quote", "a\"b.c", "\"a\\\"b.c\"")
+    ,("Windows path", "C:\\new\\test.c", "\"C:\\\\new\\\\test.c\"")
+    ,("trailing backslash", "dir\\", "\"dir\\\\\"")
+    ,("line breaks", "a\nb\rc.c", "\"a\\012b\\015c.c\"")
+    ,("ASCII whitespace and controls", "\a\b\t\v\f\ESC\DEL", "\"\\007\\010\\011\\013\\014\\033\\177\"")
+    ,("octal escape before digits", "\SOH\&234\NUL\&567", "\"\\001234\\000567\"")
+    ,("trigraphs", "what??/file??=x.c", "\"what\\?\\?/file\\?\\?=x.c\"")
+    ,("Unicode path", "caf\xe9/\x3bb\x1f600.c", "\"caf\xe9/\x3bb\x1f600.c\"")
+    ]
 
 classTests :: TestTree
 classTests = testGroup "Pretty instances"
