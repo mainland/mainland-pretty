@@ -19,6 +19,16 @@ Output:
  gamma]
 ```
 
+Use `prefixLines` to wrap line comments within the surrounding document's width:
+
+```haskell
+pretty 12 (prefixLines "-- " (sep (map text ["alpha", "beta"])))
+-- "-- alpha\n-- beta"
+```
+
+Separate subsequent code with a `line` outside any enclosing `group` that could
+flatten that separator.
+
 See the [document API](https://hackage.haskell.org/package/mainland-pretty/docs/Text-PrettyPrint-Mainland.html)
 for layout, width, indentation, and source-tracking contracts, and the
 [Pretty class API](https://hackage.haskell.org/package/mainland-pretty/docs/Text-PrettyPrint-Mainland-Class.html)

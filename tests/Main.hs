@@ -46,7 +46,7 @@ import           Text.PrettyPrint.Mainland.Class
 
 main :: IO ()
 main = defaultMain $ testGroup "mainland-pretty"
-    [ primitiveTests, layoutTests, largeListTests, locationTests, filenameTests, classTests, outputTests
+    [ primitiveTests, layoutTests, prefixTests, largeListTests, locationTests, filenameTests, classTests, outputTests
     , localOption (QuickCheckTests 1000) $
       localOption (QuickCheckMaxSize 30) propertyTests
     ]
@@ -221,6 +221,110 @@ layoutTests = testGroup "layout and combinators"
   where
     abc = map char "abc"
     multiline = char 'a' </> char 'b'
+
+prefixTests :: TestTree
+prefixTests = testGroup "line prefixes"
+    [ renderCase "wraps with the prefix included in the width" 12 comment
+        "-- alpha\n-- beta"
+    , renderCase "fits exactly with the prefix" 13 comment "-- alpha beta"
+    , renderCase "an enclosing group flattens without repeating the prefix" 80
+        (group (prefixLines "-- " multiline)) "-- a b"
+    , renderCase "flatten preserves only the initial prefix" 0
+        (flatten (prefixLines "-- " multiline)) "-- a b"
+    , renderCase "following content participates in the width choice" 6
+        (prefixLines "# " (group multiline) <> text "xx") "# a\n# bxx"
+    , testGroup "narrow widths keep indivisible content"
+        [renderCase (show w) w comment "-- alpha\n-- beta" | w <- [-1, 0, 2]]
+    , testGroup "empty scopes emit nothing"
+        [renderCase name 80 (prefixLines "-- " d <> text "x") "x"
+        | (name, d) <- [("literal", empty), ("String", text ""),
+                       ("strict Text", strictText T.empty),
+                       ("lazy Text", lazyText LT.empty),
+                       ("annotation", srcloc (linePos "f.c" 4)),
+                       ("queried", column (const empty)),
+                       ("nested", prefixLines "> " (text ""))]]
+    , renderCase "empty prefix is the identity" 80
+        (prefixLines "" multiline) "a\nb"
+    , renderCase "prefixing literal empty preserves separator behavior" 80
+        (prefixLines "-- " empty <+> text "x") "x"
+    , renderCase "blank lines are prefixed without a dangling final prefix" 80
+        (prefixLines "-- " (line <> text "a" <> line <> line)) "-- \n-- a\n-- \n"
+    , renderCase "a trailing break does not prefix following code" 80
+        (prefixLines "-- " (text "a" <> line) <> text "code") "-- a\ncode"
+    , renderCase "a separator outside the scope ends the comment" 80
+        (comment </> text "code") "-- alpha beta\ncode"
+    , renderCase "flattening the separator does not terminate a comment" 80
+        (group (comment </> text "code")) "-- alpha beta code"
+    , renderCase "prefixes start at their position within a line" 80
+        (text "x " <> prefixLines "-- " multiline) "x -- a\n-- b"
+    , renderCase "automatic indentation precedes prefixes" 80
+        (indent 2 (prefixLines "-- " multiline)) "  -- a\n  -- b"
+    , renderCase "explicit indentation follows the initial prefix" 80
+        (prefixLines "-- " (indent 2 multiline)) "--   a\n  -- b"
+    , renderCase "alignment does not count the prefix twice" 80
+        (text "x " <> prefixLines "-- " (align multiline)) "x -- a\n  -- b"
+    , renderCase "negative nesting retains its existing column semantics" 80
+        (nest (-2) (prefixLines "-- " (text "a" </> column int))) "-- a\n-- 1"
+    , renderCase "queries include pending prefixes" 80
+        (prefixLines "-- " (column int <> colon <> nesting int)) "-- 3:3"
+    , renderCase "queries after a line include repeated prefixes" 80
+        (prefixLines "-- " (text "a" </> column int <> colon <> nesting int))
+        "-- a\n-- 3:3"
+    , renderCase "width includes the prefix once on a single line" 80
+        (width (prefixLines "-- " (text "a")) int) "-- a4"
+    , renderCase "nested prefixes compose and end independently" 80
+        (prefixLines "> " (prefixLines "-- " multiline </> text "c"))
+        "> -- a\n> -- b\n> c"
+    , renderCase "outer prefix is not repeated on entering a scope mid-line" 80
+        (prefixLines "> " (text "a" <> prefixLines "-- " (text "b" </> text "c") <> text "d"))
+        "> a-- b\n> -- cd"
+    , renderCase "exiting an empty inner scope preserves a pending outer prefix" 80
+        (prefixLines "> " (prefixLines "-- " (text "") <> text "a")) "> a"
+    , renderCase "outer scope resumes after an inner trailing break" 80
+        (prefixLines "> " (prefixLines "-- " (text "a" <> line) <> column int))
+        "> -- a\n> 2"
+    , renderCase "sibling scopes on the same line each get a prefix" 80
+        (prefixLines "# " (text "a") <> prefixLines "> " (text "b")) "# a> b"
+    , renderCase "Unicode prefix width uses character counts" 4
+        (prefixLines "\x3bb " (group multiline)) "\x3bb a\n\x3bb b"
+    , pragmaCase "leading annotations precede prefixes and indentation" 80
+        (prefixLines "-- " (srcloc (linePos "f.c" 4) <> nest 2
+            (text "a" <> line <> srcloc (linePos "f.c" 8) <> text "b")))
+        "#line 4 \"f.c\"\n-- a\n#line 8 \"f.c\"\n  -- b"
+    , pragmaCase "annotated blank lines retain mapping" 80
+        (prefixLines "-- " (srcloc (linePos "f.c" 4) <> line <>
+            srcloc (linePos "f.c" 5) <> text "a"))
+        "#line 4 \"f.c\"\n-- \n-- a"
+    , pragmaCase "flattened annotations remain mid-line" 80
+        (group (prefixLines "-- " (text "a" </> srcloc (linePos "f.c" 8) <> text "b")))
+        "-- a b"
+    , testCase "render retains explicit source positions within prefixes" $
+        positions (render 80 (prefixLines "-- "
+            (srcloc (linePos "f.c" 4) <> text "a" </>
+             srcloc (linePos "f.c" 8) <> text "b"))) @?=
+            [linePos "f.c" 4, linePos "f.c" 8]
+    , testCase "many prefixed lines render with the default stack limit" $
+        LT.length (prettyLazyText 80
+            (prefixLines "-- " (stack (replicate 100000 (char 'x'))))) @?= 499999
+    , testCase "many independent prefix scopes render with the default stack limit" $
+        LT.length (prettyLazyText 80
+            (stack (replicate 100000 (prefixLines "-- " (char 'x'))))) @?= 499999
+    , testGroup "compact rendering"
+        [testCase name $ do
+            prettyCompact d @?= expected
+            prettyCompactS d "suffix" @?= expected ++ "suffix"
+            LT.unpack (displayLazyText (renderCompact d)) @?= expected
+        | (name, d, expected) <-
+            [("hard lines", nest 2 (prefixLines "-- " multiline), "-- a\n-- b"),
+             ("alternatives", comment, "-- alpha beta"),
+             ("queries", prefixLines "-- " (column int </> nesting int), "-- 3\n-- 3"),
+             ("empty scope", prefixLines "-- " (text "" <> strictText T.empty <> lazyText LT.empty), ""),
+             ("nested scopes", prefixLines "> " (prefixLines "-- " (text "a" <> line) <> text "b"), "> -- a\n> b"),
+             ("blank and trailing lines", prefixLines "-- " (line <> line), "-- \n-- \n")]]
+    ]
+  where
+    multiline = text "a" </> text "b"
+    comment = prefixLines "-- " (sep (map text ["alpha", "beta"]))
 
 -- The test executable's default RTS options cap stack use at 1 MiB. These cases
 -- force both construction and complete output, including long runs of Empty.
@@ -580,7 +684,7 @@ instance Arbitrary ScalarText where
 data Document = Literal ScalarText | HardLine | SoftLine | SoftBreak
               | Annotation Int | Append Document Document | Group Document
               | Nest Int Document | Align Document | Column | Nesting
-              | Collection [Document]
+              | Collection [Document] | Prefixed ScalarText Document
     deriving Show
 
 instance Arbitrary Document where
@@ -595,6 +699,7 @@ instance Arbitrary Document where
              (2, Group <$> generate (n - 1)),
              (1, Nest <$> choose (0, 5) <*> generate (n - 1)),
              (1, Align <$> generate (n - 1)),
+             (2, Prefixed <$> resize 4 arbitrary <*> generate (n - 1)),
              (1, do count <- choose (0, 3)
                     Collection <$> vectorOf count (generate (n `div` 3)))]
     shrink (Literal s) = map Literal (shrink s)
@@ -602,20 +707,22 @@ instance Arbitrary Document where
     shrink (Group d) = d : map Group (shrink d)
     shrink (Nest n d) = d : [Nest m d | m <- shrink n, m >= 0] ++ map (Nest n) (shrink d)
     shrink (Align d) = d : map Align (shrink d)
+    shrink (Prefixed s d) = d : [Prefixed t d | t <- shrink s] ++ map (Prefixed s) (shrink d)
     shrink (Collection ds) = ds ++ map Collection (shrinkList shrink ds)
     shrink _ = []
 
 document :: (String -> Doc) -> Document -> Doc
 document atom tree = case tree of
-    Literal (ScalarText s) -> atom s
-    HardLine               -> line
-    SoftLine               -> softline
-    SoftBreak              -> softbreak
-    Annotation n           -> srcloc (linePos "f.c" n)
-    Append a b             -> document atom a <> document atom b
-    Group d                -> group (document atom d)
-    Nest n d               -> nest n (document atom d)
-    Align d                -> align (document atom d)
-    Column                 -> column int
-    Nesting                -> nesting int
-    Collection ds          -> list (map (document atom) ds)
+    Literal (ScalarText s)    -> atom s
+    HardLine                  -> line
+    SoftLine                  -> softline
+    SoftBreak                 -> softbreak
+    Annotation n              -> srcloc (linePos "f.c" n)
+    Append a b                -> document atom a <> document atom b
+    Group d                   -> group (document atom d)
+    Nest n d                  -> nest n (document atom d)
+    Align d                   -> align (document atom d)
+    Column                    -> column int
+    Nesting                   -> nesting int
+    Prefixed (ScalarText s) d -> prefixLines s (document atom d)
+    Collection ds             -> list (map (document atom) ds)

@@ -41,7 +41,7 @@ module Text.PrettyPrint.Mainland (
     empty,
     srcloc, line, softline, softbreak,
     (<|>), (<+>), (</>), (<+/>), (<//>),
-    group, flatten,
+    group, flatten, prefixLines,
 
     -- ** Wrapping documents in delimiters
     enclose, squotes, dquotes, angles, backquotes, braces, brackets, parens,
@@ -116,6 +116,8 @@ data Doc -- | The empty document
          | Line
          -- | Indented document
          | Nest {-# UNPACK #-} !Int Doc
+         -- | Prefix each rendered line within a scope
+         | Prefix {-# UNPACK #-} !Int String Doc
          -- | Tag output with source location
          | SrcLoc Loc
          -- | Document concatenation
@@ -369,18 +371,49 @@ group d     = flatten d `Alt` d
 -- It replaces 'line' with 'space' and selects the left branch of alternatives.
 -- Source directives emitted during pragma display can still add physical lines.
 flatten :: Doc -> Doc
-flatten Empty        = Empty
-flatten (Char c)     = Char c
-flatten (String l s) = String l s
-flatten (Text s)     = Text s
-flatten (LazyText s) = LazyText s
-flatten Line         = Char ' '
-flatten (x `Cat` y)  = flatten x `Cat` flatten y
-flatten (Nest i x)   = Nest i (flatten x)
-flatten (x `Alt` _)  = flatten x
-flatten (SrcLoc loc) = SrcLoc loc
-flatten (Column f)   = Column (flatten . f)
-flatten (Nesting f)  = Nesting (flatten . f)
+flatten Empty          = Empty
+flatten (Char c)       = Char c
+flatten (String l s)   = String l s
+flatten (Text s)       = Text s
+flatten (LazyText s)   = LazyText s
+flatten Line           = Char ' '
+flatten (x `Cat` y)    = flatten x `Cat` flatten y
+flatten (Nest i x)     = Nest i (flatten x)
+flatten (Prefix l s x) = Prefix l s (flatten x)
+flatten (x `Alt` _)    = flatten x
+flatten (SrcLoc loc)   = SrcLoc loc
+flatten (Column f)     = Column (flatten . f)
+flatten (Nesting f)    = Nesting (flatten . f)
+
+-- | Prefix each rendered line of a document with a finite, newline-free string.
+-- The prefix contributes to the current column and to width-based layout
+-- choices. It is repeated only at line breaks that survive 'group' or 'flatten'.
+--
+-- >>> pretty 12 (prefixLines "-- " (sep (map text ["alpha", "beta"])))
+-- "-- alpha\n-- beta"
+-- >>> pretty 13 (prefixLines "-- " (sep (map text ["alpha", "beta"])))
+-- "-- alpha beta"
+--
+-- Prefixes follow automatic indentation. Explicit spaces in the document follow
+-- the prefix. 'column' and 'nesting' include the active prefix widths, so 'align'
+-- aligns the content after the prefix. Nested prefixes appear from outermost to
+-- innermost. A prefix starting mid-line appears immediately before its content.
+--
+-- Empty documents and annotation-only documents produce no prefix. Blank lines
+-- within the document are prefixed, but a trailing line break does not produce
+-- a prefix unless more content follows within the scope. An empty prefix is the
+-- identity. Source directives appear before prefixes, and an automatically
+-- inserted prefix does not prevent a leading 'srcloc' annotation from applying.
+-- 'renderCompact' preserves prefixes while ignoring indentation as usual.
+--
+-- This combinator does not terminate a line comment. Place the following code
+-- after a 'line' outside any enclosing 'group' that could flatten that separator.
+--
+-- @since 0.8.0
+prefixLines :: String -> Doc -> Doc
+prefixLines "" d    = d
+prefixLines _ Empty = Empty
+prefixLines s d     = Prefix (length s) s d
 
 -- | The document @'enclose' l r d@ encloses the document @d@ between the
 -- documents @l@ and @r@ using @<>@. It obeys the law
@@ -559,12 +592,12 @@ nest :: Int -> Doc -> Doc
 nest i d = Nest i d
 
 -- | The document @'column' f@ is produced by calling @f@ with the current
--- column.
+-- column, including any pending 'prefixLines' prefixes.
 column :: (Int -> Doc) -> Doc
 column = Column
 
 -- | The document @'nesting' f@ is produced by calling @f@ with the
--- current nesting level.
+-- current nesting level, including the widths of active 'prefixLines' prefixes.
 nesting :: (Int -> Doc) -> Doc
 nesting = Nesting
 
@@ -642,9 +675,9 @@ data RDoc -- | The empty document
 -- or terminal display cells. Tabs are not expanded, and combining characters
 -- and wide glyphs do not receive special treatment.
 --
--- Nesting supplies the column after a line break. See 'nest' for negative
--- indentation. Source directives have zero layout width even though pragma
--- display adds physical lines for them.
+-- Nesting and active prefixes supply the column after a line break. See 'nest'
+-- for negative indentation. Source directives have zero layout width even though
+-- pragma display adds physical lines for them.
 render :: Int -> Doc -> RDoc
 render w x = best w 0 x
 
@@ -654,39 +687,81 @@ data Docs -- | No document.
           = Nil
           -- | Indentation, document and tail
           | Cons {-# UNPACK #-} !Int Doc Docs
+          -- | Restore the enclosing prefix scope
+          | EndPrefix Prefixes Docs
+
+-- Cache depth and total width so ordinary fragments need not walk the scopes.
+-- The renderer records how many scopes have emitted a prefix on this line.
+-- New scopes remain pending until content or a blank line is emitted, allowing
+-- empty scopes to disappear and source directives to precede their prefixes.
+data Prefixes = NoPrefixes
+              | PrefixScope !Int !Int !Int String Prefixes
+
+prefixDepth :: Prefixes -> Int
+prefixDepth NoPrefixes                  = 0
+prefixDepth (PrefixScope depth _ _ _ _) = depth
+
+prefixWidth :: Prefixes -> Int
+prefixWidth NoPrefixes                  = 0
+prefixWidth (PrefixScope _ total _ _ _) = total
+
+pushPrefix :: Int -> String -> Prefixes -> Prefixes
+pushPrefix l s ps = PrefixScope (prefixDepth ps + 1) (prefixWidth ps + l) l s ps
+
+pendingPrefixes :: Int -> Prefixes -> (Int, RDocS)
+pendingPrefixes _ NoPrefixes = (0, id)
+pendingPrefixes emitted (PrefixScope depth _ l s ps)
+    | depth <= emitted = (0, id)
+    | otherwise = let (w, f) = pendingPrefixes emitted ps
+                  in (w + l, f . RString l s)
 
 best :: Int -> Int -> Doc -> RDoc
-best !pageWidth initialColumn doc = be True Nothing Nothing initialColumn id (Cons 0 doc Nil)
+best !pageWidth initialColumn doc =
+    be NoPrefixes 0 True Nothing Nothing initialColumn id (Cons 0 doc Nil)
   where
-    be :: Bool      -- ^ Is this before the first text fragment on the line?
+    be :: Prefixes  -- ^ Active prefix scopes
+       -> Int       -- ^ Scopes that have emitted their prefix on this line
+       -> Bool      -- ^ Is this before the first text fragment on the line?
        -> Maybe Pos -- ^ Current line's mapping established by emitted pragmas
        -> Maybe Pos -- ^ Pending annotation before text or a line break
-       -> Int       -- ^ Current column
+       -> Int       -- ^ Current column, excluding pending prefixes
        -> RDocS     -- ^ Our continuation
        -> Docs      -- ^ 'Docs' to layout
        -> RDoc
-    be _  _ _  !_  f Nil           = f REmpty
-    be nl p p' !k  f (Cons i d ds) =
+    be _ _ _ _ _ !_ f Nil = f REmpty
+    be _ emitted nl p p' !k f (EndPrefix ps ds) =
+        be ps (min emitted (prefixDepth ps)) nl p p' k f ds
+    be ps emitted nl p p' !k f (Cons i d ds) =
         case d of
-          -- Empty fragments must not emit or consume source annotations.
-          Empty      -> be nl    p p' k f ds
-          String 0 _ -> be nl p p' k f ds
-          Text s | T.null s -> be nl p p' k f ds
-          LazyText s | L.null s -> be nl p p' k f ds
-          Char c     -> be False p'' Nothing (k+1) (f . prag . RChar c) ds
-          String l s -> be False p'' Nothing (k+l) (f . prag . RString l s) ds
-          Text s     -> be False p'' Nothing (k+T.length s) (f . prag . RText s) ds
-          LazyText s -> be False p'' Nothing (k+fromIntegral (L.length s)) (f . prag . RLazyText s) ds
-          Line       -> (f . prag . RLine i) (be True (fmap advance p'') Nothing i id ds)
-          x `Cat` y  -> be nl p p' k f (Cons i x (Cons i y ds))
-          Nest j x   -> be nl p p' k f (Cons (i+j) x ds)
-          x `Alt` y  -> better k f (be nl p p' k id (Cons i x ds))
-                                   (be nl p p' k id (Cons i y ds))
-          SrcLoc loc | nl -> be nl p (updatePos p' loc) k f ds
-                     | otherwise -> be nl p p' k f ds
-          Column g   -> be nl p p' k f (Cons i (g k) ds)
-          Nesting g  -> be nl p p' k f (Cons i (g i) ds)
+          -- Empty fragments must not emit or consume annotations or prefixes.
+          Empty      -> next k f ds
+          String 0 _ -> next k f ds
+          Text s | T.null s -> next k f ds
+          LazyText s | L.null s -> next k f ds
+          Char c     -> content (k' + 1) (RChar c)
+          String l s -> content (k' + l) (RString l s)
+          Text s     -> content (k' + T.length s) (RText s)
+          LazyText s -> content (k' + fromIntegral (L.length s)) (RLazyText s)
+          Line       -> (f . prag . pref . RLine i)
+                            (be ps 0 True (fmap advance p'') Nothing i id ds)
+          x `Cat` y  -> next k f (Cons i x (Cons i y ds))
+          Nest j x   -> next k f (Cons (i+j) x ds)
+          Prefix l s x -> be (pushPrefix l s ps) emitted nl p p' k f
+                            (Cons i x (EndPrefix ps ds))
+          x `Alt` y  -> better k f (next k id (Cons i x ds))
+                                   (next k id (Cons i y ds))
+          SrcLoc loc | nl -> be ps emitted nl p (updatePos p' loc) k f ds
+                     | otherwise -> next k f ds
+          Column g   -> next k f (Cons i (g k') ds)
+          Nesting g  -> next k f (Cons i (g (i + prefixWidth ps)) ds)
       where
+        next = be ps emitted nl p p'
+        (pendingWidth, pref) = pendingPrefixes emitted ps
+        k' = k + pendingWidth
+        content columnAfter fragment =
+            be ps (prefixDepth ps) False p'' Nothing columnAfter
+                (f . prag . pref . fragment) ds
+
         p'' :: Maybe Pos
         prag :: RDocS
         (p'', prag) = lineLoc p p'
@@ -726,27 +801,41 @@ best !pageWidth initialColumn doc = be True Nothing Nothing initialColumn id (Co
 
 -- | Render without width-based choices, nesting, or source annotations.
 -- Always selects the left alternative and preserves hard line breaks that
--- remain in that alternative. 'nesting' queries see zero, while 'column' still
--- tracks emitted text and resets to zero at each line break.
+-- remain in that alternative. Line prefixes are preserved. 'nesting' queries
+-- see only the active prefix widths, while 'column' tracks emitted text and
+-- resets to the pending prefix width at each line break.
 renderCompact :: Doc -> RDoc
-renderCompact doc = scan 0 [doc]
+renderCompact doc = scan NoPrefixes 0 0 (Cons 0 doc Nil)
   where
-    scan :: Int -> [Doc] -> RDoc
-    scan !_ []     = REmpty
-    scan !k (d:ds) =
+    scan :: Prefixes -> Int -> Int -> Docs -> RDoc
+    scan _ _ !_ Nil = REmpty
+    scan _ emitted !k (EndPrefix ps ds) =
+        scan ps (min emitted (prefixDepth ps)) k ds
+    scan ps emitted !k (Cons _ d ds) =
         case d of
-          Empty      -> scan k ds
-          Char c     -> RChar c (scan (k+1) ds)
-          String l s -> RString l s (scan (k+l) ds)
-          Text s     -> RText s (scan (k+T.length s) ds)
-          LazyText s -> RLazyText s (scan (k+fromIntegral (L.length s)) ds)
-          Line       -> RLine 0 (scan 0 ds)
-          Nest _ x   -> scan k (x:ds)
-          SrcLoc _   -> scan k ds
-          Cat x y    -> scan k (x:y:ds)
-          Alt x _    -> scan k (x:ds)
-          Column f   -> scan k (f k:ds)
-          Nesting f  -> scan k (f 0:ds)
+          Empty      -> next k ds
+          String 0 s -> RString 0 s (next k ds)
+          Text s | T.null s -> RText s (next k ds)
+          LazyText s | L.null s -> RLazyText s (next k ds)
+          Char c     -> content (k' + 1) (RChar c)
+          String l s -> content (k' + l) (RString l s)
+          Text s     -> content (k' + T.length s) (RText s)
+          LazyText s -> content (k' + fromIntegral (L.length s)) (RLazyText s)
+          Line       -> pref (RLine 0 (scan ps 0 0 ds))
+          Nest _ x   -> next k (Cons 0 x ds)
+          Prefix l s x -> scan (pushPrefix l s ps) emitted k
+                              (Cons 0 x (EndPrefix ps ds))
+          SrcLoc _   -> next k ds
+          Cat x y    -> next k (Cons 0 x (Cons 0 y ds))
+          Alt x _    -> next k (Cons 0 x ds)
+          Column f   -> next k (Cons 0 (f k') ds)
+          Nesting f  -> next k (Cons 0 (f (prefixWidth ps)) ds)
+      where
+        next = scan ps emitted
+        (pendingWidth, pref) = pendingPrefixes emitted ps
+        k' = k + pendingWidth
+        content columnAfter fragment =
+            pref (fragment (scan ps (prefixDepth ps) columnAfter ds))
 
 -- | Display a rendered document, ignoring source annotations. The result is a
 -- 'ShowS' function that prepends the output to its argument. No final newline
