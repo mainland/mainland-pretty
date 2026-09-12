@@ -75,6 +75,7 @@ module Text.PrettyPrint.Mainland (
     putDoc, putDocLn, hPutDoc, hPutDocLn
   ) where
 
+import           Data.Char              (ord)
 import           Data.Loc               (Loc (..), Located (..), Pos (..),
                                          posFile, posLine)
 #if !MIN_VERSION_base(4,11,0)
@@ -85,6 +86,7 @@ import qualified Data.Text              as T
 import qualified Data.Text.Lazy         as L
 import qualified Data.Text.Lazy.Builder as B
 import qualified Data.Text.Lazy.IO      as TIO
+import           Numeric                (showOct)
 import           System.IO              (Handle)
 
 -- | The abstract type of documents.
@@ -687,6 +689,13 @@ prettyCompact :: Doc -> String
 prettyCompact x = prettyCompactS x ""
 
 -- | Display a rendered document with #line pragmas.
+--
+-- Filenames use C string-literal quoting. Quotes, backslashes, and question marks
+-- are escaped, and ASCII control characters use three-digit octal escapes.
+-- Non-ASCII characters are preserved.
+--
+-- Escaping keeps the directive on one physical line. C preprocessors may still
+-- reject or normalize control characters in filenames when expanding @__FILE__@.
 displayPragmaS :: RDoc -> ShowS
 displayPragmaS = go
   where
@@ -712,9 +721,23 @@ displayPragmaS = go
         showString "#line " .
         shows (posLine p) .
         showChar ' ' .
-        showChar '"' .
-        showString (posFile p) .
-        showChar '"'
+        showString (quotePragmaFile (posFile p))
+
+-- Share the filename encoding between the String and builder backends. C octal
+-- escapes consume at most three digits, so a following digit cannot extend one.
+-- Escape question marks to avoid trigraphs in C dialects that recognize them.
+quotePragmaFile :: FilePath -> String
+quotePragmaFile file = '"' : foldr escape "\"" file
+  where
+    escape :: Char -> ShowS
+    escape '"'  = showString "\\\""
+    escape '\\' = showString "\\\\"
+    escape '?'  = showString "\\?"
+    escape c
+        | c < ' ' || c == '\DEL' =
+            let digits = showOct (ord c) ""
+            in showChar '\\' . showString (replicate (3 - length digits) '0' ++ digits)
+        | otherwise = showChar c
 
 -- | Render and display a document with #line pragmas.
 prettyPragmaS :: Int -> Doc -> ShowS
@@ -756,7 +779,8 @@ displayLazyText = B.toLazyText . go
 prettyLazyText :: Int -> Doc -> L.Text
 prettyLazyText w x = displayLazyText (render w x)
 
--- | Display a rendered document with #line pragmas as 'L.Text'. Uses a builder.
+-- | Display a rendered document with #line pragmas as 'L.Text'. Uses a builder
+-- and the filename quoting described in 'displayPragmaS'.
 displayPragmaLazyText :: RDoc -> L.Text
 displayPragmaLazyText = B.toLazyText . go
   where
@@ -788,7 +812,7 @@ displayPragmaLazyText = B.toLazyText . go
     renderPosLine = go . renderCompact . int . posLine
 
     renderPosFile :: Pos -> B.Builder
-    renderPosFile = go . renderCompact . enclose dquote dquote . string . posFile
+    renderPosFile = B.fromString . quotePragmaFile . posFile
 
 -- | Render and convert a document to 'L.Text' with #line pragmas. Uses a builder.
 prettyPragmaLazyText :: Int -> Doc -> L.Text
