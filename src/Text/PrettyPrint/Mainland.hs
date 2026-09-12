@@ -436,8 +436,9 @@ semisep = align . sep . punctuate semi
 
 -- | The document @'enclosesep' l r p ds@ separates @ds@ with the punctuation @p@
 -- and encloses the result using @l@ and @r@. When wrapped, punctuation appears
--- at the end of the line. The enclosed portion of the document is aligned one
--- column to the right of the opening document.
+-- at the end of the line. The enclosed portion of the document is aligned to
+-- the column immediately after the opening document, including when there is
+-- only one element. A singleton's explicit line breaks are preserved.
 --
 -- @
 -- \> ws = map text (words \"The quick brown fox jumps over the lazy dog\")
@@ -457,7 +458,7 @@ enclosesep :: Doc -> Doc -> Doc -> [Doc] -> Doc
 enclosesep left right p ds =
     case ds of
       []  ->  left <> right
-      [d] -> left <> d <> right
+      [d] -> left <> align d <> right
       _   ->   left <> align (sep (punctuate p ds)) <> right
 
 -- | The document @'tuple' ds@ separates @ds@ with commas and encloses them with

@@ -132,6 +132,43 @@ layoutTests = testGroup "layout and combinators"
     , renderCase "singleton list" 80 (list [char 'a']) "[a]"
     , renderCase "list aligns wrapped elements" 5 (list abc) "[a,\n b,\n c]"
     , renderCase "tuple" 80 (tuple abc) "(a, b, c)"
+    , testGroup "singleton enclosures"
+        [ renderCase "list aligns a multiline element" 80 (list [multiline]) "[a\n b]"
+        , renderCase "tuple aligns a multiline element" 80 (tuple [multiline]) "(a\n b)"
+        , renderCase "alignment follows a wider opening and preceding text" 80
+            (text "xx" <> enclosesep (text "<<") (text ">>") comma [multiline])
+            "xx<<a\n    b>>"
+        , renderCase "alignment follows the final line of the opening" 80
+            (enclosesep (text "open" <> line <> text "<<") (text ">>") comma [multiline])
+            "open\n<<a\n  b>>"
+        , renderCase "alignment overrides outer nesting" 80
+            (nest 10 (list [multiline])) "[a\n b]"
+        , renderCase "alignment overrides negative outer nesting" 80
+            (nest (-2) (list [multiline])) "[a\n b]"
+        , renderCase "alignment includes explicit indentation" 80
+            (indent 2 (list [multiline])) "  [a\n   b]"
+        , renderCase "nested enclosures align their contents" 80
+            (list [list [multiline]]) "[[a\n  b]]"
+        , renderCase "following lines retain the outer nesting" 80
+            (list [multiline] <> line <> text "z") "[a\n b]\nz"
+        , renderCase "closing documents retain the outer nesting" 80
+            (enclosesep (text "<<") (line <> text "end") comma [multiline])
+            "<<a\n  b\nend"
+        , renderCase "a singleton empty document" 80 (list [empty]) "[]"
+        , renderCase "a singleton blank line" 80 (list [line]) "[\n ]"
+        , renderCase "grouped content fits exactly" 5 (list [group multiline]) "[a b]"
+        , renderCase "grouped content breaks below the boundary" 4
+            (list [group multiline]) "[a\n b]"
+        , renderCase "zero width retains alignment" 0 (list [multiline]) "[a\n b]"
+        , renderCase "negative width retains alignment" (-1) (list [multiline]) "[a\n b]"
+        , renderCase "nesting queries see the aligned column" 80 (list [nesting int]) "[1]"
+        , pragmaCase "directives precede the aligned indentation" 80
+            (list [text "a" <> line <> srcloc (linePos "f.c" 20) <> text "b"])
+            "[a\n#line 20 \"f.c\"\n b]"
+        , testCase "compact output still ignores alignment" $ do
+            prettyCompact (list [multiline]) @?= "[a\nb]"
+            LT.unpack (displayLazyText (renderCompact (list [multiline]))) @?= "[a\nb]"
+        ]
     , renderCase "enclose" 80 (enclose (text "<<") (text ">>") (char 'x')) "<<x>>"
     , testGroup "delimiters"
         [renderCase name 80 (wrap (char 'x')) expected | (name, wrap, expected) <-
@@ -166,6 +203,7 @@ layoutTests = testGroup "layout and combinators"
     ]
   where
     abc = map char "abc"
+    multiline = char 'a' </> char 'b'
 
 locationTests :: TestTree
 locationTests = testGroup "source locations"
