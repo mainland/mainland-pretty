@@ -196,6 +196,23 @@ layoutTests = testGroup "layout and combinators"
     , renderCase "fillbreak does not break at equal width" 80 (fillbreak 2 (text "ab")) "ab"
     , renderCase "fillbreak breaks and nests longer documents" 80
         (fillbreak 2 (text "abc") <> char 'x') "abc\n  x"
+    , testGroup "documented contracts"
+        [ renderCase "README example" 12
+            (list (map text ["alpha", "beta", "gamma"])) "[alpha,\n beta,\n gamma]"
+        , renderCase "enclosesep example" 15
+            (enclosesep lparen rparen comma (map text (words "The quick brown fox jumps over the lazy dog")))
+            "(The, quick,\n brown, fox,\n jumps, over,\n the, lazy,\n dog)"
+        , renderCase "softline example fits" 11
+            (text "foo" <+/> text "bar" <+/> text "baz") "foo bar baz"
+        , renderCase "softline example breaks all separators" 6
+            (text "foo" <+/> text "bar" <+/> text "baz") "foo\nbar\nbaz"
+        , renderCase "multiline width is a column difference" 80
+            (text "abc" <> width (text "x" <> line <> text "y") int) "abcx\ny-2"
+        , renderCase "negative nesting remains observable without spaces" 80
+            (nest (-2) (text "a" <> line <> column int <> colon <> nesting int)) "a\n-2:-2"
+        , renderCase "negative spaces retain a text fragment" 80
+            (spaces (-2) <+> text "x") " x"
+        ]
     , testCase "compact output ignores nesting and chooses the first alternative" $ do
         let d = nest 4 (group (char 'a' </> char 'b') </> nesting int)
         prettyCompact d @?= "a b\n0"
