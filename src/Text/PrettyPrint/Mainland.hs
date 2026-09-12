@@ -261,6 +261,17 @@ empty = Empty
 
 -- | The document @'srcloc' x@ tags the current line with @'locOf' x@. Only
 -- shown when running 'prettyPragma' and friends.
+--
+-- Place the annotation before the line's first nonempty text fragment. Explicit
+-- spaces count as text, so use @srcloc loc <> indent n doc@ to annotate an
+-- indented document. Automatic indentation after 'line' does not prevent an
+-- annotation. Annotations after text on the same line are ignored, including
+-- when 'group' flattens a line break to a space.
+--
+-- Before text, the last annotation other than 'NoLoc' wins. An annotation before
+-- a blank 'line' applies to that blank line. An annotation at the end of the
+-- document without text or a line break emits nothing. 'NoLoc' leaves both
+-- pending annotations and the existing source mapping unchanged.
 srcloc :: Located a => a -> Doc
 srcloc x = SrcLoc (locOf x)
 
@@ -557,9 +568,9 @@ data Docs -- | No document.
 best :: Int -> Int -> Doc -> RDoc
 best !pageWidth initialColumn doc = be True Nothing Nothing initialColumn id (Cons 0 doc Nil)
   where
-    be :: Bool      -- ^ Did a newline just occur?
-       -> Maybe Pos -- ^ Previous source position
-       -> Maybe Pos -- ^ Current source position
+    be :: Bool      -- ^ Is this before the first text fragment on the line?
+       -> Maybe Pos -- ^ Current line's mapping established by emitted pragmas
+       -> Maybe Pos -- ^ Pending annotation before text or a line break
        -> Int       -- ^ Current column
        -> RDocS     -- ^ Our continuation
        -> Docs      -- ^ 'Docs' to layout
@@ -572,16 +583,17 @@ best !pageWidth initialColumn doc = be True Nothing Nothing initialColumn id (Co
           String 0 _ -> be nl p p' k f ds
           Text s | T.null s -> be nl p p' k f ds
           LazyText s | L.null s -> be nl p p' k f ds
-          Char c     -> be False p p' (k+1) (f . prag . RChar c) ds
-          String l s -> be False p p' (k+l) (f . prag . RString l s) ds
-          Text s     -> be False p p' (k+T.length s) (f . prag . RText s) ds
-          LazyText s -> be False p p' (k+fromIntegral (L.length s)) (f . prag . RLazyText s) ds
-          Line       -> (f . RLine i) (be True p'' Nothing i id ds)
+          Char c     -> be False p'' Nothing (k+1) (f . prag . RChar c) ds
+          String l s -> be False p'' Nothing (k+l) (f . prag . RString l s) ds
+          Text s     -> be False p'' Nothing (k+T.length s) (f . prag . RText s) ds
+          LazyText s -> be False p'' Nothing (k+fromIntegral (L.length s)) (f . prag . RLazyText s) ds
+          Line       -> (f . prag . RLine i) (be True (fmap advance p'') Nothing i id ds)
           x `Cat` y  -> be nl p p' k f (Cons i x (Cons i y ds))
           Nest j x   -> be nl p p' k f (Cons (i+j) x ds)
           x `Alt` y  -> better k f (be nl p p' k id (Cons i x ds))
                                    (be nl p p' k id (Cons i y ds))
-          SrcLoc loc -> be nl p (updatePos p' loc) k f ds
+          SrcLoc loc | nl -> be nl p (updatePos p' loc) k f ds
+                     | otherwise -> be nl p p' k f ds
           Column g   -> be nl p p' k f (Cons i (g k) ds)
           Nesting g  -> be nl p p' k f (Cons i (g i) ds)
       where
@@ -589,31 +601,19 @@ best !pageWidth initialColumn doc = be True Nothing Nothing initialColumn id (Co
         prag :: RDocS
         (p'', prag) = lineLoc p p'
 
-        -- | Given the previous and current position, figure out the actual
-        -- current position and return a 'RDocS' that will add a #line pragma
-        -- (in the form of an 'RPos') if necessary.
-        lineLoc :: Maybe Pos          -- ^ Previous source position
-                -> Maybe Pos          -- ^ Current source position
-                -> (Maybe Pos, RDocS) -- ^ Current source position and position
-                                      -- pragma
-        lineLoc Nothing   Nothing       = (Nothing, noPragma)
-        lineLoc Nothing   (Just pos)    = (Just pos, pragma pos)
+        -- A pending annotation is consumed only when text or a line break is
+        -- emitted. Mid-line annotations never enter this state, so every change
+        -- to the tracked file or line has a corresponding emitted pragma.
+        lineLoc :: Maybe Pos -> Maybe Pos -> (Maybe Pos, RDocS)
+        lineLoc p1 Nothing = (p1, id)
+        lineLoc Nothing (Just pos) = (Just pos, RPos pos)
         lineLoc (Just p1) (Just p2)
             | posFile p2 == posFile p1 &&
-              posLine p2 == posLine p1 + 1 = (Just p2, noPragma)
-            | otherwise                    = (Just p2, pragma p2)
-        lineLoc (Just p1) Nothing       = (Just (advance p1), noPragma)
-          where
-            advance :: Pos -> Pos
-            advance (Pos file l c coff) = Pos file (l+1) c coff
+              posLine p2 == posLine p1 = (Just p2, id)
+            | otherwise               = (Just p2, RPos p2)
 
-        noPragma :: RDocS
-        noPragma = id
-
-        -- We only insert a pragma if a newline was just output.
-        pragma :: Pos -> RDocS
-        pragma pos | nl        = RPos pos
-                   | otherwise = id
+    advance :: Pos -> Pos
+    advance (Pos file l c coff) = Pos file (l+1) c coff
 
     better :: Int -> RDocS -> RDoc -> RDoc -> RDoc
     better !k f x y | fits (pageWidth - k) x = f x
