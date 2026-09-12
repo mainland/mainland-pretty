@@ -46,7 +46,7 @@ import           Text.PrettyPrint.Mainland.Class
 
 main :: IO ()
 main = defaultMain $ testGroup "mainland-pretty"
-    [ primitiveTests, layoutTests, locationTests, filenameTests, classTests, outputTests
+    [ primitiveTests, layoutTests, largeListTests, locationTests, filenameTests, classTests, outputTests
     , localOption (QuickCheckTests 1000) $
       localOption (QuickCheckMaxSize 30) propertyTests
     ]
@@ -205,6 +205,27 @@ layoutTests = testGroup "layout and combinators"
     abc = map char "abc"
     multiline = char 'a' </> char 'b'
 
+-- The test executable's default RTS options cap stack use at 1 MiB. These cases
+-- force both construction and complete output, including long runs of Empty.
+largeListTests :: TestTree
+largeListTests = testGroup "large document lists"
+    [ testGroup name
+        [ testCase "nonempty elements" $
+            LT.length (prettyLazyText 80 (combine (replicate count (char 'x'))))
+                @?= fromIntegral (2 * count - 1)
+        , testCase "empty elements between nonempty elements" $
+            LT.length (prettyLazyText 80 (combine (concat (replicate count [empty, char 'x']))))
+                @?= fromIntegral (2 * count - 1)
+        , testCase "all empty elements retain separator identity" $
+            pretty 80 (combine (replicate count empty) <+> char 'x') @?= "x"
+        , testCase "a long empty tail inserts no separator" $
+            pretty 80 (combine (char 'x' : replicate count empty)) @?= "x"
+        ]
+    | (name, combine) <- [("spread", spread), ("stack", stack), ("sep", sep)]
+    ]
+  where
+    count = 100000
+
 locationTests :: TestTree
 locationTests = testGroup "source locations"
     [ pragmaCase "initial annotation" 80 (at 10 <> text "x") "#line 10 \"f.c\"\nx"
@@ -309,6 +330,11 @@ locationTests = testGroup "source locations"
                 at 20 <> line <> at 21 <> text "y"))
                 @?= [linePos "f.c" 10, linePos "f.c" 21]
         ]
+    , testCase "many lines before an annotation render with a 1 MiB stack limit" $ do
+        let d = stack (replicate 100000 (char 'x')) </> at 7 <> char 'y'
+        LT.length (prettyLazyText 80 d) @?= 200001
+        LT.length (prettyPragmaLazyText 80 d) @?= 200015
+        LT.length (prettyPragmaLazyText 80 (at 1 <> d)) @?= 200029
     , testCase "ordinary and compact output hide annotations" $ do
         let d = at 10 <> text "x" </> at 20 <> text "y"
         pretty 80 d @?= "x\ny"
@@ -506,6 +532,18 @@ propertyTests = testGroup "generated rendering properties"
         let d = document text tree in prettyPragma w (d <> mempty) === prettyPragma w d
     , testProperty "compact display backends agree" $ \tree ->
         let d = document text tree in prettyCompact d === LT.unpack (displayLazyText (renderCompact d))
+    , testGroup "list combinators agree with right folds"
+        [ testProperty name $ \trees -> withWidth $ \w ->
+            let ds = map (maybe empty (document text)) trees
+                outputs renderList =
+                    let d = renderList ds
+                    in (prettyPragma w d, LT.unpack (prettyPragmaLazyText w d),
+                        prettyCompact d, prettyPragma w (text "prefix" <+> d <+> text "suffix"))
+            in outputs combine === outputs reference
+        | (name, combine, reference) <-
+            [("spread", spread, folddoc (<+>)), ("stack", stack, folddoc (</>)),
+             ("sep", sep, group . folddoc (<+/>))]
+        ]
     ]
   where
     withWidth = forAll (choose (-2, 100) :: Gen Int)

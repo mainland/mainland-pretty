@@ -398,13 +398,34 @@ folddoc _ []     = empty
 folddoc _ [x]    = x
 folddoc f (x:xs) = f x (folddoc f xs)
 
+-- Separator operators inspect their right operand for Empty, so a direct right
+-- fold forces the entire tail on the call stack. Scan for the next nonempty
+-- element instead, leaving the recursive construction suspended inside Cat.
+-- This preserves right association and skips only literal Empty documents.
+separate :: Doc -> [Doc] -> Doc
+separate p = start
+  where
+    start :: [Doc] -> Doc
+    start []         = empty
+    start (Empty:ds) = start ds
+    start (d:ds)     = rest d ds
+
+    rest :: Doc -> [Doc] -> Doc
+    rest d []         = d
+    rest d (Empty:ds) = rest d ds
+    rest d ds         = d <> p <> start ds
+
 -- | The document @'spread' ds@ concatenates the documents @ds@ with 'space'.
+-- Literal 'empty' elements are skipped. Constructing the concatenation uses
+-- bounded stack space, independent of list length. Evaluating individual
+-- elements or rendering their contents can require more stack space.
 spread :: [Doc] -> Doc
-spread = folddoc (<+>)
+spread = separate space
 
 -- | The document @'stack' ds@ concatenates the documents @ds@ with 'line'.
+-- It skips 'empty' elements and has the same construction bound as 'spread'.
 stack :: [Doc] -> Doc
-stack = folddoc (</>)
+stack = separate line
 
 -- | The document @'cat' ds@ concatenates the documents @ds@ with the 'empty'
 -- document as long as there is room, and uses 'line' when there isn't.
@@ -413,8 +434,9 @@ cat = group . folddoc (<//>)
 
 -- | The document @'sep' ds@ concatenates the documents @ds@ with the 'space'
 -- document as long as there is room, and uses 'line' when there isn't.
+-- It skips 'empty' elements and has the same construction bound as 'spread'.
 sep :: [Doc] -> Doc
-sep = group . folddoc (<+/>)
+sep = group . separate softline
 
 -- | The document @'punctuate' p ds@ obeys the law:
 --
