@@ -455,9 +455,7 @@ classTests = testGroup "Pretty instances"
     , renderCase "ratios respect operator precedence" 80
         (pprPrec 7 ((-1) % 2 :: Rational) <+> pprPrec 8 (1 % 2 :: Rational))
         "(-1) % 2 (1 % 2)"
-    , renderCase "complex numbers respect operator precedence" 80
-        (pprPrec 6 (1 :+ 2 :: Complex Double) <+> pprPrec 7 (1 :+ 2 :: Complex Double))
-        "1.0 :+ 2.0 (1.0 :+ 2.0)"
+    , complexTests
     , renderCase "Text instances" 80 (ppr (T.pack "a") <> ppr (LT.pack "b")) "ab"
     , renderCase "Doc instance" 80 (ppr (text "x")) "x"
     , renderCase "unit" 80 (ppr ()) "()"
@@ -477,6 +475,30 @@ classTests = testGroup "Pretty instances"
     , pragmaCase "located payload preserves precedence without annotating" 80
         (pprPrec 7 (L (Loc (point 2 3) (point 2 5)) (-3 :: Int))) "(-3)"
     ]
+
+complexTests :: TestTree
+complexTests = testGroup "complex numbers respect operator precedence"
+    [ check "Float" (cases :: [(String, Complex Float, String)])
+    , check "Double" (cases :: [(String, Complex Double, String)])
+    ]
+  where
+    cases :: RealFloat a => [(String, Complex a, String)]
+    cases =
+        [("positive components", 1 :+ 2, "1.0 :+ 2.0"),
+         ("negative real part", (-1) :+ 2, "(-1.0) :+ 2.0"),
+         ("negative imaginary part", 1 :+ (-2), "1.0 :+ (-2.0)"),
+         ("negative components", (-1) :+ (-2), "(-1.0) :+ (-2.0)"),
+         ("negative zero real part", (-0.0) :+ 2, "(-0.0) :+ 2.0"),
+         ("negative zero imaginary part", 1 :+ (-0.0), "1.0 :+ (-0.0)"),
+         ("negative zero components", (-0.0) :+ (-0.0), "(-0.0) :+ (-0.0)")]
+
+    check :: Pretty a => String -> [(String, a, String)] -> TestTree
+    check name values = testGroup name
+        [testGroup label
+            [renderCase ("precedence " ++ show p) 80 (pprPrec p value)
+                (if p > 6 then "(" ++ expected ++ ")" else expected)
+            | p <- [0, 6, 7, 11]]
+        | (label, value, expected) <- values]
 
 data OnlyPpr = OnlyPpr
 instance Pretty OnlyPpr where

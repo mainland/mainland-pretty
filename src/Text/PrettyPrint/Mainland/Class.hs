@@ -112,13 +112,14 @@ instance (Integral a, Pretty a) => Pretty (Ratio a)  where
         parensIf (p > ratioPrec) $
         pprPrec ratioPrec1 (numerator x) <+> char '%' <+> pprPrec ratioPrec1 (denominator x)
 
-addPrec :: Int
-addPrec  = 6  -- Precedence of '+'
+complexPrec, complexPrec1 :: Int
+complexPrec  = 6  -- Precedence of ':+'
+complexPrec1 = complexPrec + 1
 
 instance (RealFloat a, Pretty a) => Pretty (Complex a)  where
     pprPrec p x =
-        parensIf (p > addPrec) $
-        pprPrec addPrec (realPart x) <+> text ":+" <+> pprPrec addPrec (imagPart x)
+        parensIf (p > complexPrec) $
+        pprPrec complexPrec1 (realPart x) <+> text ":+" <+> pprPrec complexPrec1 (imagPart x)
 
 instance Pretty Word8 where
     pprPrec p x = text (showsPrec p x "")
