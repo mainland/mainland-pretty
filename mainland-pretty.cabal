@@ -37,7 +37,12 @@ tested-with:    GHC==8.0.2,
 build-type:     Simple
 
 extra-source-files:
+  CONTRIBUTING.md
   README.md
+  scripts/check-common.sh
+  scripts/check-comments.sh
+  scripts/check-downstream.sh
+  tests/integration/Comments.hs
 
 library
   hs-source-dirs: src
