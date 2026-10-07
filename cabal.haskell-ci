@@ -1,0 +1,2 @@
+-- GHC 8.0 and 8.2 bindists require the legacy terminfo ABI.
+distribution: jammy
