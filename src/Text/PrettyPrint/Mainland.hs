@@ -2,11 +2,11 @@
 -- Module      :  Text.PrettyPrint.Mainland
 -- Copyright   :  (c) 2006-2011 Harvard University
 --                (c) 2011-2012 Geoffrey Mainland
---                (c) 2015-2017 Drexel University
+--                (c) 2015-2026 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 --
--- Stability   :  provisional
+-- Stability   :  stable
 -- Portability :  portable
 --
 -- Build 'Doc' values from text, separators, nesting, and alternative layouts.

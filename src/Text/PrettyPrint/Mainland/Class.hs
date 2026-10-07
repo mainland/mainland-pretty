@@ -4,11 +4,11 @@
 -- Module      :  Text.PrettyPrint.Mainland.Class
 -- Copyright   :  (c) 2006-2011 Harvard University
 --                (c) 2011-2012 Geoffrey Mainland
---                (c) 2015-2017 Drexel University
+--                (c) 2015-2026 Drexel University
 -- License     :  BSD-style
 -- Maintainer  :  mainland@drexel.edu
 --
--- Stability   :  provisional
+-- Stability   :  stable
 -- Portability :  portable
 --
 -- Convert values to layout-aware documents with 'Pretty', or print them with
