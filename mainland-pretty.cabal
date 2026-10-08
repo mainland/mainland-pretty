@@ -13,12 +13,10 @@ homepage:       https://github.com/mainland/mainland-pretty
 bug-reports:    https://github.com/mainland/mainland-pretty/issues
 category:       Text
 synopsis:       Pretty printing designed for printing source code.
-description:    Pretty printing designed for printing source code based on
-                Wadler's paper /A Prettier Printer/. The main advantage of this
-                library is its ability to automatically track the source
-                locations associated with pretty printed values and output
-                appropriate #line pragmas and its ability to produce output
-                in the form of lazy text using a builder.
+description:    A pretty-printing library for source code, based on Wadler's
+                /A Prettier Printer/. It supports width-sensitive layout,
+                source location tracking with optional @#line@ directives,
+                and output to String or lazy Text.
 tested-with:    GHC==8.0.2,
                 GHC==8.2.2,
                 GHC==8.4.4,
@@ -37,6 +35,7 @@ tested-with:    GHC==8.0.2,
 build-type:     Simple
 
 extra-source-files:
+  CHANGELOG.md
   CONTRIBUTING.md
   README.md
   scripts/check-common.sh
