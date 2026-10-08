@@ -10,7 +10,8 @@ import           Data.Complex                    (Complex ((:+)))
 import           Data.Int                        (Int16, Int32, Int64, Int8)
 import           Data.List                       (isInfixOf)
 import           Data.Loc                        (L (..), Loc (..), Pos (..),
-                                                  advancePos, linePos, posCoff)
+                                                  advancePos, linePos, posCoff,
+                                                  posFile)
 import qualified Data.Map                        as Map
 import           Data.Ratio                      ((%))
 #if !MIN_VERSION_base(4,11,0)
@@ -45,7 +46,7 @@ import           Text.PrettyPrint.Mainland.Class
 
 main :: IO ()
 main = defaultMain $ testGroup "mainland-pretty"
-    [ primitiveTests, layoutTests, locationTests, classTests, outputTests
+    [ primitiveTests, layoutTests, locationTests, filenameTests, classTests, outputTests
     , localOption (QuickCheckTests 1000) $
       localOption (QuickCheckMaxSize 30) propertyTests
     ]
@@ -169,6 +170,30 @@ layoutTests = testGroup "layout and combinators"
 locationTests :: TestTree
 locationTests = testGroup "source locations"
     [ pragmaCase "initial annotation" 80 (at 10 <> text "x") "#line 10 \"f.c\"\nx"
+    , testGroup "empty text fragments"
+        [ testGroup name
+            [ pragmaCase "before an initial annotation" 80
+                (fragment <> at 10 <> text "x") "#line 10 \"f.c\"\nx"
+            , pragmaCase "do not emit a pending annotation prematurely" 80
+                (at 10 <> fragment <> at 20 <> text "x" </> at 21 <> text "y")
+                "#line 20 \"f.c\"\nx\ny"
+            , pragmaCase "preserve directives before automatic indentation" 1
+                (nest 2 (group (at 10 <> text "x" <> line <>
+                    fragment <> at 20 <> text "y")))
+                "#line 10 \"f.c\"\nx\n#line 20 \"f.c\"\n  y"
+            , pragmaCase "without visible content emit no directive" 80
+                (at 10 <> fragment) ""
+            , testCase "render retains only the annotation for visible content" $
+                positions (render 80 (at 10 <> fragment <> at 20 <> text "x"))
+                    @?= [linePos "f.c" 20]
+            , testCase "separator operators still insert their separators" $
+                forM_ [((<+>), " "), ((</>), "\n"), ((<+/>), " ")] $ \(op, sepText) -> do
+                    pretty 80 (op fragment (text "x")) @?= sepText ++ "x"
+                    pretty 80 (op (text "x") fragment) @?= "x" ++ sepText
+            ]
+        | (name, fragment) <- [("String", text ""),
+            ("strict Text", strictText T.empty), ("lazy Text", lazyText LT.empty)]
+        ]
     , pragmaCase "documented example works across srcloc versions" 80
         (srcloc (linePos "filename" 3) <> stack (map text ["foo", "bar", "baz"]))
         "#line 3 \"filename\"\nfoo\nbar\nbaz"
@@ -202,6 +227,50 @@ locationTests = testGroup "source locations"
     , pragmaCase "NoLoc does not reset an existing mapping" 80
         (at 10 <> text "x" </> srcloc NoLoc <> text "y" </> at 12 <> text "z")
         "#line 10 \"f.c\"\nx\ny\nz"
+    , testGroup "source mapping transitions"
+        [ pragmaCase "an initial annotated blank line establishes a mapping" 80
+            (at 10 <> line <> at 11 <> text "x") "#line 10 \"f.c\"\n\nx"
+        , pragmaCase "an annotated blank line can change the mapping" 80
+            (at 10 <> text "x" <> line <> at 20 <> line <> at 21 <> text "y")
+            "#line 10 \"f.c\"\nx\n#line 20 \"f.c\"\n\ny"
+        , pragmaCase "unannotated blank lines advance the emitted mapping" 80
+            (at 10 <> text "x" <> line <> line <> at 12 <> text "y")
+            "#line 10 \"f.c\"\nx\n\ny"
+        , pragmaCase "a final annotated blank line emits its directive" 80
+            (at 10 <> line) "#line 10 \"f.c\"\n\n"
+        , pragmaCase "NoLoc preserves a pending blank-line annotation" 80
+            (at 10 <> srcloc NoLoc <> line <> at 11 <> text "x")
+            "#line 10 \"f.c\"\n\nx"
+        , pragmaCase "a mid-line annotation cannot establish a mapping" 80
+            (text "x" <> at 10 <> line <> at 11 <> text "y")
+            "x\n#line 11 \"f.c\"\ny"
+        , pragmaCase "a mid-line annotation cannot change a mapping" 80
+            (at 10 <> text "x" <> at 20 <> line <> at 21 <> text "y")
+            "#line 10 \"f.c\"\nx\n#line 21 \"f.c\"\ny"
+        , pragmaCase "ignored annotations do not cause redundant directives" 80
+            (at 10 <> text "x" <> at 20 <> line <> at 11 <> text "y")
+            "#line 10 \"f.c\"\nx\ny"
+        , pragmaCase "unannotated lines advance past an ignored annotation" 80
+            (at 10 <> text "x" <> at 20 <> line <> text "y" <> line <> at 12 <> text "z")
+            "#line 10 \"f.c\"\nx\ny\nz"
+        , pragmaCase "a mid-line file change cannot change a mapping" 80
+            (at 10 <> text "x" <> srcloc (linePos "g.c" 20) <>
+                line <> srcloc (linePos "g.c" 21) <> text "y")
+            "#line 10 \"f.c\"\nx\n#line 21 \"g.c\"\ny"
+        , pragmaCase "annotations must precede explicit indentation" 80
+            (at 10 <> indent 2 (text "x")) "#line 10 \"f.c\"\n  x"
+        , pragmaCase "annotations after explicit spaces leave the mapping unchanged" 80
+            (indent 2 (at 10 <> text "x" <> line <> at 11 <> text "y"))
+            "  x\n#line 11 \"f.c\"\n  y"
+        , pragmaCase "flattened mid-line annotations do not change the mapping" 80
+            groupedLocations "#line 10 \"f.c\"\nx y\n#line 21 \"f.c\"\nz"
+        , pragmaCase "broken alternatives retain their line annotations" 1
+            groupedLocations "#line 10 \"f.c\"\nx\n#line 20 \"f.c\"\ny\nz"
+        , testCase "render retains directives for actual mapping changes" $
+            positions (render 80 (at 10 <> line <> at 11 <> text "x" <>
+                at 20 <> line <> at 21 <> text "y"))
+                @?= [linePos "f.c" 10, linePos "f.c" 21]
+        ]
     , testCase "ordinary and compact output hide annotations" $ do
         let d = at 10 <> text "x" </> at 20 <> text "y"
         pretty 80 d @?= "x\ny"
@@ -221,6 +290,8 @@ locationTests = testGroup "source locations"
     ]
   where
     at = srcloc . linePos "f.c"
+    groupedLocations = group (at 10 <> text "x" <> line <> at 20 <> text "y") <>
+        line <> at 21 <> text "z"
 
 -- srcloc 1.0 makes offsets optional and ignores them in Pos equality.
 -- Check offsets explicitly so a lost known offset cannot pass unnoticed.
@@ -246,6 +317,41 @@ positions (RText _ rest)     = positions rest
 positions (RLazyText _ rest) = positions rest
 positions (RLine _ rest)     = positions rest
 positions (RPos p rest)      = p : positions rest
+
+filenameTests :: TestTree
+filenameTests = testGroup "pragma filenames"
+    [ testGroup name
+        [ pragmaCase "document output" 80
+            (srcloc (linePos file 10) <> text "x") (directive ++ "\nx")
+        , testCase "public RPos output" $ do
+            let d = RPos (linePos file 10) (RChar 'x' REmpty)
+            displayPragmaS d "suffix" @?= directive ++ "\nxsuffix"
+            LT.unpack (displayPragmaLazyText d) @?= directive ++ "\nx"
+        , testCase "directive before indentation" $ do
+            let d = RLine 2 (RPos (linePos file 10) (RChar 'x' REmpty))
+            displayPragmaS d "suffix" @?= "\n" ++ directive ++ "\n  xsuffix"
+            LT.unpack (displayPragmaLazyText d) @?= "\n" ++ directive ++ "\n  x"
+        , testCase "render retains the original filename" $
+            map posFile (positions (render 80 (srcloc (linePos file 10) <> text "x")))
+                @?= [file]
+        ]
+    | (name, file, quoted) <- filenameCases
+    , let directive = "#line 10 " ++ quoted
+    ]
+
+filenameCases :: [(String, FilePath, String)]
+filenameCases =
+    [("ordinary path", "dir/file name.c", "\"dir/file name.c\"")
+    ,("empty path", "", "\"\"")
+    ,("quote", "a\"b.c", "\"a\\\"b.c\"")
+    ,("Windows path", "C:\\new\\test.c", "\"C:\\\\new\\\\test.c\"")
+    ,("trailing backslash", "dir\\", "\"dir\\\\\"")
+    ,("line breaks", "a\nb\rc.c", "\"a\\012b\\015c.c\"")
+    ,("ASCII whitespace and controls", "\a\b\t\v\f\ESC\DEL", "\"\\007\\010\\011\\013\\014\\033\\177\"")
+    ,("octal escape before digits", "\SOH\&234\NUL\&567", "\"\\001234\\000567\"")
+    ,("trigraphs", "what??/file??=x.c", "\"what\\?\\?/file\\?\\?=x.c\"")
+    ,("Unicode path", "caf\xe9/\x3bb\x1f600.c", "\"caf\xe9/\x3bb\x1f600.c\"")
+    ]
 
 classTests :: TestTree
 classTests = testGroup "Pretty instances"

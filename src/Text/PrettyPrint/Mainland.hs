@@ -75,6 +75,7 @@ module Text.PrettyPrint.Mainland (
     putDoc, putDocLn, hPutDoc, hPutDocLn
   ) where
 
+import           Data.Char              (ord)
 import           Data.Loc               (Loc (..), Located (..), Pos (..),
                                          posFile, posLine)
 #if !MIN_VERSION_base(4,11,0)
@@ -85,6 +86,7 @@ import qualified Data.Text              as T
 import qualified Data.Text.Lazy         as L
 import qualified Data.Text.Lazy.Builder as B
 import qualified Data.Text.Lazy.IO      as TIO
+import           Numeric                (showOct)
 import           System.IO              (Handle)
 
 -- | The abstract type of documents.
@@ -261,6 +263,17 @@ empty = Empty
 
 -- | The document @'srcloc' x@ tags the current line with @'locOf' x@. Only
 -- shown when running 'prettyPragma' and friends.
+--
+-- Place the annotation before the line's first nonempty text fragment. Explicit
+-- spaces count as text, so use @srcloc loc <> indent n doc@ to annotate an
+-- indented document. Automatic indentation after 'line' does not prevent an
+-- annotation. Annotations after text on the same line are ignored, including
+-- when 'group' flattens a line break to a space.
+--
+-- Before text, the last annotation other than 'NoLoc' wins. An annotation
+-- before a blank 'line' applies to that blank line. An annotation at the end of
+-- the document without text or a line break emits nothing. 'NoLoc' leaves both
+-- pending annotations and the existing source mapping unchanged.
 srcloc :: Located a => a -> Doc
 srcloc x = SrcLoc (locOf x)
 
@@ -557,27 +570,34 @@ data Docs -- | No document.
 best :: Int -> Int -> Doc -> RDoc
 best !pageWidth initialColumn doc = be True Nothing Nothing initialColumn id (Cons 0 doc Nil)
   where
-    be :: Bool      -- ^ Did a newline just occur?
-       -> Maybe Pos -- ^ Previous source position
-       -> Maybe Pos -- ^ Current source position
+    be :: Bool      -- ^ Is this before the first text fragment on the line?
+       -> Maybe Pos -- ^ Current line's mapping established by emitted pragmas
+       -> Maybe Pos -- ^ Pending annotation before text or a line break
        -> Int       -- ^ Current column
        -> RDocS     -- ^ Our continuation
        -> Docs      -- ^ 'Docs' to layout
        -> RDoc
-    be _  _ _  !_  f Nil           = f REmpty
-    be nl p p' !k  f (Cons i d ds) =
+    -- The line mapping is strict. A lazy update would keep one thunk per
+    -- unannotated line or text fragment until a later annotation inspected it.
+    be _  !_ _  !_  f Nil           = f REmpty
+    be nl !p p' !k  f (Cons i d ds) =
         case d of
+          -- Empty fragments must not emit or consume source annotations.
           Empty      -> be nl    p p' k f ds
-          Char c     -> be False p p' (k+1) (f . prag . RChar c) ds
-          String l s -> be False p p' (k+l) (f . prag . RString l s) ds
-          Text s     -> be False p p' (k+T.length s) (f . prag . RText s) ds
-          LazyText s -> be False p p' (k+fromIntegral (L.length s)) (f . prag . RLazyText s) ds
-          Line       -> (f . RLine i) (be True p'' Nothing i id ds)
+          String 0 _ -> be nl p p' k f ds
+          Text s | T.null s -> be nl p p' k f ds
+          LazyText s | L.null s -> be nl p p' k f ds
+          Char c     -> be False p'' Nothing (k+1) (f . prag . RChar c) ds
+          String l s -> be False p'' Nothing (k+l) (f . prag . RString l s) ds
+          Text s     -> be False p'' Nothing (k+T.length s) (f . prag . RText s) ds
+          LazyText s -> be False p'' Nothing (k+fromIntegral (L.length s)) (f . prag . RLazyText s) ds
+          Line       -> (f . prag . RLine i) (be True nextLine Nothing i id ds)
           x `Cat` y  -> be nl p p' k f (Cons i x (Cons i y ds))
           Nest j x   -> be nl p p' k f (Cons (i+j) x ds)
           x `Alt` y  -> better k f (be nl p p' k id (Cons i x ds))
                                    (be nl p p' k id (Cons i y ds))
-          SrcLoc loc -> be nl p (updatePos p' loc) k f ds
+          SrcLoc loc | nl -> be nl p (updatePos p' loc) k f ds
+                     | otherwise -> be nl p p' k f ds
           Column g   -> be nl p p' k f (Cons i (g k) ds)
           Nesting g  -> be nl p p' k f (Cons i (g i) ds)
       where
@@ -585,31 +605,25 @@ best !pageWidth initialColumn doc = be True Nothing Nothing initialColumn id (Co
         prag :: RDocS
         (p'', prag) = lineLoc p p'
 
-        -- | Given the previous and current position, figure out the actual
-        -- current position and return a 'RDocS' that will add a #line pragma
-        -- (in the form of an 'RPos') if necessary.
-        lineLoc :: Maybe Pos          -- ^ Previous source position
-                -> Maybe Pos          -- ^ Current source position
-                -> (Maybe Pos, RDocS) -- ^ Current source position and position
-                                      -- pragma
-        lineLoc Nothing   Nothing       = (Nothing, noPragma)
-        lineLoc Nothing   (Just pos)    = (Just pos, pragma pos)
+        -- Advance strictly, so that the position inside Just is evaluated too.
+        nextLine :: Maybe Pos
+        nextLine = case p'' of
+                     Nothing  -> Nothing
+                     Just pos -> Just $! advance pos
+
+        -- A pending annotation is consumed only when text or a line break is
+        -- emitted. Mid-line annotations never enter this state, so every change
+        -- to the tracked file or line has a corresponding emitted pragma.
+        lineLoc :: Maybe Pos -> Maybe Pos -> (Maybe Pos, RDocS)
+        lineLoc p1 Nothing         = (p1, id)
+        lineLoc Nothing (Just pos) = (Just pos, RPos pos)
         lineLoc (Just p1) (Just p2)
             | posFile p2 == posFile p1 &&
-              posLine p2 == posLine p1 + 1 = (Just p2, noPragma)
-            | otherwise                    = (Just p2, pragma p2)
-        lineLoc (Just p1) Nothing       = (Just (advance p1), noPragma)
-          where
-            advance :: Pos -> Pos
-            advance (Pos file l c coff) = Pos file (l+1) c coff
+              posLine p2 == posLine p1 = (Just p2, id)
+            | otherwise               = (Just p2, RPos p2)
 
-        noPragma :: RDocS
-        noPragma = id
-
-        -- We only insert a pragma if a newline was just output.
-        pragma :: Pos -> RDocS
-        pragma pos | nl        = RPos pos
-                   | otherwise = id
+    advance :: Pos -> Pos
+    advance (Pos file l c coff) = Pos file (l+1) c coff
 
     better :: Int -> RDocS -> RDoc -> RDoc -> RDoc
     better !k f x y | fits (pageWidth - k) x = f x
@@ -683,6 +697,14 @@ prettyCompact :: Doc -> String
 prettyCompact x = prettyCompactS x ""
 
 -- | Display a rendered document with #line pragmas.
+--
+-- Filenames use C string-literal quoting. Quotes, backslashes, and question
+-- marks are escaped, and ASCII control characters use three-digit octal
+-- escapes. Non-ASCII characters are preserved.
+--
+-- Escaping keeps the directive on one physical line. C preprocessors may still
+-- reject or normalize control characters in filenames when expanding
+-- @__FILE__@.
 displayPragmaS :: RDoc -> ShowS
 displayPragmaS = go
   where
@@ -708,9 +730,23 @@ displayPragmaS = go
         showString "#line " .
         shows (posLine p) .
         showChar ' ' .
-        showChar '"' .
-        showString (posFile p) .
-        showChar '"'
+        showString (quotePragmaFile (posFile p))
+
+-- Share the filename encoding between the String and builder backends. C octal
+-- escapes consume at most three digits, so a following digit cannot extend one.
+-- Escape question marks to avoid trigraphs in C dialects that recognize them.
+quotePragmaFile :: FilePath -> String
+quotePragmaFile file = '"' : foldr escape "\"" file
+  where
+    escape :: Char -> ShowS
+    escape '"'  = showString "\\\""
+    escape '\\' = showString "\\\\"
+    escape '?'  = showString "\\?"
+    escape c
+        | c < ' ' || c == '\DEL' =
+            let digits = showOct (ord c) ""
+            in showChar '\\' . showString (replicate (3 - length digits) '0' ++ digits)
+        | otherwise              = showChar c
 
 -- | Render and display a document with #line pragmas.
 prettyPragmaS :: Int -> Doc -> ShowS
@@ -752,7 +788,8 @@ displayLazyText = B.toLazyText . go
 prettyLazyText :: Int -> Doc -> L.Text
 prettyLazyText w x = displayLazyText (render w x)
 
--- | Display a rendered document with #line pragmas as 'L.Text'. Uses a builder.
+-- | Display a rendered document with #line pragmas as 'L.Text'. Uses a builder
+-- and the filename quoting described in 'displayPragmaS'.
 displayPragmaLazyText :: RDoc -> L.Text
 displayPragmaLazyText = B.toLazyText . go
   where
@@ -784,7 +821,7 @@ displayPragmaLazyText = B.toLazyText . go
     renderPosLine = go . renderCompact . int . posLine
 
     renderPosFile :: Pos -> B.Builder
-    renderPosFile = go . renderCompact . enclose dquote dquote . string . posFile
+    renderPosFile = B.fromString . quotePragmaFile . posFile
 
 -- | Render and convert a document to 'L.Text' with #line pragmas. Uses a
 -- builder.
