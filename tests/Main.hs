@@ -614,6 +614,10 @@ locationTests = testGroup "source locations"
         LT.length (prettyLazyText 80 d) @?= 200001
         LT.length (prettyPragmaLazyText 80 d) @?= 200015
         LT.length (prettyPragmaLazyText 80 (at 1 <> d)) @?= 200029
+    , testCase "many consecutive annotations render with a 1 MiB stack limit" $ do
+        let before d = mconcat (replicate 200000 d) <> char 'x'
+        prettyPragma 80 (before (at 3)) @?= "#line 3 \"f.c\"\nx"
+        prettyPragma 80 (at 2 <> before (srcloc NoLoc)) @?= "#line 2 \"f.c\"\nx"
     , testCase "ordinary and compact output hide annotations" $ do
         let d = at 10 <> text "x" </> at 20 <> text "y"
         pretty 80 d @?= "x\ny"

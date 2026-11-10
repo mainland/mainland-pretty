@@ -813,15 +813,15 @@ best !pageWidth initialColumn doc =
        -> RDocS     -- ^ Our continuation
        -> Docs      -- ^ 'Docs' to layout
        -> Layout
-    -- The scope count and line mapping are strict. Lazy updates would keep one
-    -- thunk per empty scope, unannotated line, or text fragment until a later
-    -- fragment or annotation inspected them.
-    be _ !_ _ !_ _ !_ f Nil                         = Layout True (f REmpty)
-    be ps !emitted nl !p p' !k f (EndFlat ds)       =
+    -- The scope count, line mapping, and pending annotation are strict. Lazy
+    -- updates would keep one thunk per empty scope, unannotated line, text
+    -- fragment, or annotation until a later fragment inspected them.
+    be _ !_ _ !_ !_ !_ f Nil                         = Layout True (f REmpty)
+    be ps !emitted nl !p !p' !k f (EndFlat ds)       =
         Layout True (f (layoutDoc (be ps emitted nl p p' k id ds)))
-    be _ !emitted nl !p p' !k f (EndPrefix ps ds)   =
+    be _ !emitted nl !p !p' !k f (EndPrefix ps ds)   =
         be ps (min emitted (prefixDepth ps)) nl p p' k f ds
-    be ps !emitted nl !p p' !k f (Cons mode i d ds) =
+    be ps !emitted nl !p !p' !k f (Cons mode i d ds) =
         case d of
           -- Empty fragments must not emit or consume annotations or prefixes.
           Empty      -> next k f ds
