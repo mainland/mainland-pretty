@@ -11,3 +11,10 @@ release notes.
 
 See [CONTRIBUTING.md](https://github.com/mainland/mainland-pretty/blob/main/CONTRIBUTING.md)
 for development and testing instructions.
+
+## AI assistance
+
+All contributions included in releases through version `0.7.1.1` were made
+without AI assistance. AI tools were used in development, review, and release
+preparation after that version, through version `1.0.0`. The maintainer remains
+responsible for this release.
