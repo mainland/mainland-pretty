@@ -741,6 +741,17 @@ classTests = testGroup "Pretty instances"
     , renderCase "sets use ascending order" 80
         (ppr (Set.fromList [3, 1, 2, 1 :: Int])) "[1, 2, 3]"
     , renderCase "position" 80 (ppr (point 2 3)) "f.c:2:3"
+    , renderCase "position filename breaks retain line prefixes" 80
+        (group (prefixLines "> " (ppr (linePos "first\nsecond" 2))))
+        "> first\n> second:2:1"
+    , renderCase "same-file span filename breaks retain line prefixes" 80
+        (group (prefixLines "> " (ppr (Loc (linePos "first\nsecond" 2)
+            (linePos "first\nsecond" 4)))))
+        "> first\n> second:2:1-4:1"
+    , renderCase "cross-file span filename breaks retain line prefixes" 80
+        (group (prefixLines "> " (ppr (Loc (linePos "first" 2)
+            (linePos "second\nthird" 4)))))
+        "> first:2:1-second\n> third:4:1"
     , renderCase "NoLoc" 80 (ppr NoLoc) "<no location info>"
     , renderCase "point location" 80 (ppr (Loc (point 2 3) (point 2 3))) "f.c:2:3"
     , renderCase "same-line span" 80 (ppr (Loc (point 2 3) (point 2 5))) "f.c:2:3-5"

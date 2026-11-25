@@ -29,7 +29,7 @@ module Text.PrettyPrint.Mainland.Class (
 import           Control.Monad.IO.Class    (MonadIO, liftIO)
 import           Data.Complex              (Complex, imagPart, realPart)
 import           Data.Int
-import           Data.Loc                  (L (..), Loc (..), Pos (..), posFile)
+import           Data.Loc                  (L (..), Loc (..), Pos (..))
 import qualified Data.Map                  as Map
 #if !MIN_VERSION_base(4,11,0)
 import           Data.Semigroup            ((<>))
@@ -160,15 +160,20 @@ instance Pretty L.Text where
 instance Pretty Doc where
     ppr doc = doc
 
+-- | Print the filename, line, and column. Newlines in the filename become
+-- 'hardline' breaks, so grouping preserves them and 'prefixLines' repeats
+-- any active prefixes after them.
 instance Pretty Pos where
-    ppr p@(Pos _ l c _) =
-        text (posFile p) <> colon <> ppr l <> colon <> ppr c
+    ppr (Pos file l c _) =
+        pprFile file <> colon <> ppr l <> colon <> ppr c
 
+-- | Print a point or span. Filenames use the same mandatory line breaks
+-- as the 'Pretty' instance for 'Pos'.
 instance Pretty Loc where
     ppr NoLoc = text "<no location info>"
 
     ppr (Loc p1@(Pos f1 startLine startCol _) p2@(Pos f2 endLine endCol _))
-        | f1 == f2   = text (posFile p1) <> colon <//> pprLineCol startLine startCol endLine endCol
+        | f1 == f2   = pprFile f1 <> colon <//> pprLineCol startLine startCol endLine endCol
         | otherwise  = ppr p1 <> text "-" <> ppr p2
       where
         pprLineCol :: Int -> Int -> Int -> Int -> Doc
@@ -179,6 +184,12 @@ instance Pretty Loc where
             | otherwise             =  ppr l1 <//> colon <//> ppr c1
                                        <> text "-" <>
                                        ppr l2 <//> colon <//> ppr c2
+
+pprFile :: FilePath -> Doc
+pprFile file =
+    case break (== '\n') file of
+      (fragment, [])    -> text fragment
+      (fragment, _:rest) -> text fragment <> hardline <> pprFile rest
 
 -- | Print only the payload, preserving precedence. To attach source tracking,
 -- add 'srcloc' explicitly before the payload document.
