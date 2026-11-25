@@ -153,6 +153,15 @@ layoutTests = testGroup "layout and combinators"
         (group (char 'a' </> char 'b')) "a\nb"
     , renderCase "negative width chooses the broken layout" (-1)
         (group (char 'a' </> char 'b')) "a\nb"
+    , renderCase "minimum width breaks a group after text" minBound
+        (char 'x' <> group (char 'a' </> char 'b')) "xa\nb"
+    , renderCase "an unrepresentable positive budget keeps the broken layout" maxBound
+        (nest minBound (line <> group (char 'a' </> char 'b'))) "\na\nb"
+    , testCase "a wrapped column keeps the broken layout at zero width" $
+        let d = nest maxBound (hardline <> char 'x' <> group (char 'a' </> char 'b'))
+        in case render 0 d of
+             RLine _ rest -> take 3 (displayS rest "") @?= "xa\n"
+             _            -> fail "expected the leading hardline"
     , renderCase "flatten replaces ordinary lines with spaces" 1
         (flatten (char 'a' </> char 'b')) "a b"
     , renderCase "softline can break independently" 7

@@ -894,7 +894,10 @@ best !pageWidth initialColumn doc =
         -- fit check without traversing all later alternatives on the line.
         chosen | xFits     = f (layoutDoc x)
                | otherwise = f (layoutDoc y)
-        xFits = remaining >= 0 && layoutValid x && fits remaining (layoutDoc x)
+        -- A negative budget can wrap to a positive Int. Check the column
+        -- first, then keep the fallback if the budget does not fit in Int.
+        xFits = k <= pageWidth && remaining >= 0 &&
+                layoutValid x && fits remaining (layoutDoc x)
         remaining = pageWidth - k
 
     fits :: Int -> RDoc -> Bool
