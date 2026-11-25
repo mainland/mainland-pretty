@@ -168,7 +168,7 @@ instance Pretty Pos where
         pprFile file <> colon <> ppr l <> colon <> ppr c
 
 -- | Print a point or span. Filenames use the same mandatory line breaks
--- as the 'Pretty' instance for 'Pos'.
+-- as the 'Pretty' instance for positions.
 instance Pretty Loc where
     ppr NoLoc = text "<no location info>"
 
