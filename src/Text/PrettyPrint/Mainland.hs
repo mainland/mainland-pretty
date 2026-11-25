@@ -77,6 +77,7 @@ module Text.PrettyPrint.Mainland (
 import           Data.Char              (ord)
 import           Data.Loc               (Loc (..), Located (..), Pos (..),
                                          posFile, posLine)
+import           Data.Monoid            (Endo (..))
 #if !MIN_VERSION_base(4,11,0)
 import           Data.Semigroup         (Semigroup (..))
 #endif
@@ -1021,35 +1022,40 @@ prettyCompact x = prettyCompactS x ""
 -- reject or normalize control characters in filenames when expanding
 -- @__FILE__@.
 displayPragmaS :: RDoc -> ShowS
-displayPragmaS = go
+displayPragmaS d =
+    appEndo (displayWithPragmas (Endo . showChar) (Endo . showString)
+        (Endo . showString . T.unpack) (Endo . showString . L.unpack) d)
+
+-- Select where to place directives once, retaining native Text fragments
+-- for builder output.
+displayWithPragmas :: Monoid output
+                   => (Char -> output)
+                   -> (String -> output)
+                   -> (T.Text -> output)
+                   -> (L.Text -> output)
+                   -> RDoc
+                   -> output
+{-# INLINE displayWithPragmas #-}
+displayWithPragmas emitChar emitString emitText emitLazyText = go
   where
-    go :: RDoc -> ShowS
-    go REmpty          = id
-    go (RChar c x)     = showChar c . go x
-    go (RString _ s x) = showString s . go x
-    go (RText s x)     = showString (T.unpack s) . go x
-    go (RLazyText s x) = showString (L.unpack s) . go x
-    go (RPos p x)      = showPos p .
-                         showChar '\n' .
-                         go x
-    go (RLine i x)     = case x of
-                           RPos p x' -> showChar '\n' .
-                                        showPos p .
-                                        showString ('\n' : replicate i ' ') .
-                                        go x'
-                           _         -> showString ('\n' : replicate i ' ') .
-                                        go x
+    go REmpty               = mempty
+    go (RChar c x)          = emitChar c `mappend` go x
+    go (RString _ s x)      = emitString s `mappend` go x
+    go (RText s x)          = emitText s `mappend` go x
+    go (RLazyText s x)      = emitLazyText s `mappend` go x
+    go (RPos p x)           = directive p 0 `mappend` go x
+    go (RLine i (RPos p x)) = emitChar '\n' `mappend` directive p i `mappend` go x
+    go (RLine i x)          = newline i `mappend` go x
 
-    showPos :: Pos -> ShowS
-    showPos p =
-        showString "#line " .
-        shows (posLine p) .
-        showChar ' ' .
-        showString (quotePragmaFile (posFile p))
+    directive p i =
+        emitString ("#line " ++ show (posLine p) ++ " " ++ quotePragmaFile (posFile p))
+            `mappend` newline i
 
--- Share the filename encoding between the String and builder backends. C octal
--- escapes consume at most three digits, so a following digit cannot extend one.
--- Escape question marks to avoid trigraphs in C dialects that recognize them.
+    newline i = emitString ('\n' : replicate i ' ')
+
+-- C octal escapes consume at most three digits, so a following digit cannot
+-- extend one. Escape question marks to avoid trigraphs in C dialects that
+-- recognize them.
 quotePragmaFile :: FilePath -> String
 quotePragmaFile file = '"' : foldr escape "\"" file
   where
@@ -1107,37 +1113,8 @@ prettyLazyText w x = displayLazyText (render w x)
 -- | Display a rendered document with #line pragmas as 'L.Text'. Uses a builder
 -- and the filename quoting described in 'displayPragmaS'.
 displayPragmaLazyText :: RDoc -> L.Text
-displayPragmaLazyText = B.toLazyText . go
-  where
-    go :: RDoc -> B.Builder
-    go REmpty          = mempty
-    go (RChar c x)     = B.singleton c `mappend` go x
-    go (RText s x)     = B.fromText s `mappend` go x
-    go (RLazyText s x) = B.fromLazyText s `mappend` go x
-    go (RString _ s x) = B.fromString s `mappend` go x
-    go (RPos p x)      = displayPos p `mappend`
-                         B.singleton '\n' `mappend`
-                         go x
-    go (RLine i x)     = case x of
-                           RPos p x' -> B.singleton '\n' `mappend`
-                                        displayPos p `mappend`
-                                        B.fromString ('\n':replicate i ' ') `mappend`
-                                        go x'
-                           _         -> B.fromString ('\n':replicate i ' ') `mappend`
-                                        go x
-
-    displayPos :: Pos -> B.Builder
-    displayPos p =
-        B.fromString "#line " `mappend`
-        renderPosLine p `mappend`
-        B.singleton ' ' `mappend`
-        renderPosFile p
-
-    renderPosLine :: Pos -> B.Builder
-    renderPosLine = go . renderCompact . int . posLine
-
-    renderPosFile :: Pos -> B.Builder
-    renderPosFile = B.fromString . quotePragmaFile . posFile
+displayPragmaLazyText = B.toLazyText .
+    displayWithPragmas B.singleton B.fromString B.fromText B.fromLazyText
 
 -- | Render and convert a document to 'L.Text' with #line pragmas. Uses a
 -- builder.
