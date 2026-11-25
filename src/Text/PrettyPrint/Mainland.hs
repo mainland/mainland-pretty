@@ -331,6 +331,8 @@ empty = Empty
 -- before a blank 'line' applies to that blank line. An annotation at the end of
 -- the document without text or a line break emits nothing. 'NoLoc' leaves both
 -- pending annotations and the existing source mapping unchanged.
+-- Normal rendering evaluates the location when it reaches an annotation
+-- before the first text fragment, even if no text or line break follows.
 --
 -- Tracking uses the starting filename and line number of the location. Columns,
 -- offsets, and span endpoints do not affect directive output. Unannotated lines
